@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "851638102781",
+    "project_id": "rubenpos-dfd96",
+    "storage_bucket": "rubenpos-dfd96.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:851638102781:android:0e48bad3fd32c961f0ec94",
+        "android_client_info": {
+          "package_name": "com.example.point_of_sale"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgVTBOYclRrwr3CrnyeByrrBaZsBkJo1U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

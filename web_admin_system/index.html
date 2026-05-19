@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>POS Admin</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main id="authView" class="auth-shell">
+      <section class="auth-panel">
+        <div class="brand">
+          <img src="assets/logo.png" alt="POS Admin logo" />
+          <div>
+            <h1>POS Admin</h1>
+            <p>Business owner console</p>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button id="loginTab" class="tab active" type="button">Login</button>
+          <button id="superAdminTab" class="tab" type="button">Super admin</button>
+        </div>
+
+        <form id="loginForm" class="form">
+          <label>Email<input id="loginEmail" type="email" required /></label>
+          <label>Password<input id="loginPassword" type="password" required /></label>
+          <button type="submit">Login</button>
+        </form>
+
+        <form id="superAdminForm" class="form hidden">
+          <label>Super admin name<input id="superAdminName" required /></label>
+          <label>Email<input id="superAdminEmail" type="email" required /></label>
+          <label>Password<input id="superAdminPassword" type="password" minlength="6" required /></label>
+          <button type="submit">Create super admin</button>
+        </form>
+
+        <p id="authMessage" class="message"></p>
+      </section>
+    </main>
+
+    <main id="appView" class="app-shell hidden">
+      <aside class="sidebar">
+        <div class="brand compact">
+          <img src="assets/logo.png" alt="POS Admin logo" />
+          <div>
+            <h2>POS Admin</h2>
+            <p id="businessLabel">Business</p>
+          </div>
+        </div>
+        <nav>
+          <button class="nav active" data-page="overview">Overview</button>
+          <button class="nav" data-page="businesses">Businesses</button>
+          <button class="nav" data-page="branches">Locations</button>
+          <button class="nav" data-page="users">Users</button>
+          <button class="nav" data-page="roles">Roles & Features</button>
+          <button class="nav" data-page="products">Products</button>
+          <button class="nav" data-page="sales">Sales</button>
+        </nav>
+        <button id="logoutButton" class="logout" type="button">Logout</button>
+      </aside>
+
+      <section class="content">
+        <header>
+          <div>
+            <h1 id="pageTitle">Overview</h1>
+            <p id="ownerLabel">Signed in</p>
+          </div>
+          <button id="refreshButton" type="button">Refresh</button>
+        </header>
+
+        <section id="overviewPage" class="page"></section>
+        <section id="businessesPage" class="page hidden"></section>
+        <section id="branchesPage" class="page hidden"></section>
+        <section id="usersPage" class="page hidden"></section>
+        <section id="rolesPage" class="page hidden"></section>
+        <section id="productsPage" class="page hidden"></section>
+        <section id="salesPage" class="page hidden"></section>
+      </section>
+    </main>
+
+    <dialog id="modal">
+      <form id="modalForm" method="dialog">
+        <h2 id="modalTitle">Action</h2>
+        <div id="modalBody"></div>
+        <menu>
+          <button value="cancel" type="button" id="modalCancel">Cancel</button>
+          <button value="default" type="submit" id="modalSubmit">Save</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
