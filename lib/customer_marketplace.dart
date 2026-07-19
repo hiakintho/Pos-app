@@ -928,7 +928,7 @@ class _CartPageState extends State<_CartPage> {
   bool _checkingOut = false;
   double get _total => widget.cart.values.fold(
     0,
-    (sum, line) => sum + line.product.price * line.quantity,
+    (total, line) => total + line.product.price * line.quantity,
   );
 
   Future<void> _checkout() async {
@@ -942,52 +942,64 @@ class _CartPageState extends State<_CartPage> {
           ),
         )
         .toList(growable: false);
-    final checkoutTotal = checkoutLines.fold<double>(
-      0,
-      (total, line) => total + line.product.price * line.quantity,
-    );
-    final primaryBusinessId =
-        checkoutLines.first.product.businessId ?? 'default_business';
-    final businessDoc = await FirebaseFirestore.instance
-        .collection('businesses')
-        .doc(primaryBusinessId)
-        .get();
-    final business = businessDoc.data() ?? const <String, dynamic>{};
-    final paymentTiming =
-        business['onlinePaymentTiming'] as String? ?? 'before_order';
-    final paymentAmount = business['onlinePaymentAmount'] as String? ?? 'full';
-    final shippingFee = checkoutLines.fold<double>(
-      0,
-      (total, line) =>
-          total + (line.product.freeShipping ? 0 : line.product.shippingFee),
-    );
-    final orderTotal = checkoutTotal + shippingFee;
-    final partialPercent =
-        ((business['onlinePartialPercent'] as num?)?.toDouble() ?? 50).clamp(
-          1,
-          100,
+    final linesByShop = <String, List<_CheckoutLine>>{};
+    for (final line in checkoutLines) {
+      final shopId = line.product.businessId ?? 'default_business';
+      linesByShop.putIfAbsent(shopId, () => []).add(line);
+    }
+
+    final firestore = FirebaseFirestore.instance;
+    final shops = <String, Map<String, dynamic>>{};
+    final requiredPayments = <String, double>{};
+    final paymentMessages = <String>[];
+    for (final entry in linesByShop.entries) {
+      final shopDoc = await firestore
+          .collection('businesses')
+          .doc(entry.key)
+          .get();
+      final shop = shopDoc.data() ?? const <String, dynamic>{};
+      shops[entry.key] = shop;
+      final defaultTiming =
+          shop['onlinePaymentTiming'] as String? ?? 'before_order';
+      final defaultAmount = shop['onlinePaymentAmount'] as String? ?? 'full';
+      final partialPercent =
+          ((shop['onlinePartialPercent'] as num?)?.toDouble() ?? 50)
+              .clamp(1, 100)
+              .toDouble();
+      final requiredNow = entry.value.fold<double>(0, (total, line) {
+        final timing = line.product.paymentTiming == 'business_default'
+            ? defaultTiming
+            : line.product.paymentTiming;
+        final policy = line.product.paymentAmountPolicy == 'business_default'
+            ? defaultAmount
+            : line.product.paymentAmountPolicy;
+        if (timing != 'before_order') return total;
+        final lineTotal =
+            line.product.price * line.quantity +
+            (line.product.freeShipping ? 0 : line.product.shippingFee);
+        return total +
+            (policy == 'partial'
+                ? lineTotal * partialPercent / 100
+                : lineTotal);
+      });
+      requiredPayments[entry.key] = requiredNow;
+      if (requiredNow > 0) {
+        final shopName =
+            shop['name'] ?? entry.value.first.product.shopName ?? 'Shop';
+        paymentMessages.add(
+          '$shopName: ${_money(requiredNow)} '
+          '(Lipa number: ${shop['lipaNumber'] ?? 'Not configured'})',
         );
-    final requiredNow = checkoutLines.fold<double>(0, (total, line) {
-      final timing = line.product.paymentTiming == 'business_default'
-          ? paymentTiming
-          : line.product.paymentTiming;
-      final policy = line.product.paymentAmountPolicy == 'business_default'
-          ? paymentAmount
-          : line.product.paymentAmountPolicy;
-      if (timing != 'before_order') return total;
-      final lineTotal =
-          line.product.price * line.quantity +
-          (line.product.freeShipping ? 0 : line.product.shippingFee);
-      return total +
-          (policy == 'partial' ? lineTotal * partialPercent / 100 : lineTotal);
-    });
-    if (requiredNow > 0) {
+      }
+    }
+    if (paymentMessages.isNotEmpty) {
+      if (!mounted) return;
       final accepted = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Pay before placing order'),
           content: Text(
-            'Pay ${_money(requiredNow)} to ${business['name'] ?? 'Business'}\nLipa number: ${business['lipaNumber'] ?? 'Not configured'}\n\nContinue only after making the payment.',
+            '${paymentMessages.join('\n')}\n\nContinue only after making each payment.',
           ),
           actions: [
             TextButton(
@@ -1005,12 +1017,14 @@ class _CartPageState extends State<_CartPage> {
     }
     setState(() => _checkingOut = true);
     try {
-      final firestore = FirebaseFirestore.instance;
       final customerDoc = await firestore
           .collection('users')
           .doc(widget.customer.id)
           .get();
-      final orderRef = firestore.collection('customer_orders').doc();
+      final orderRefs = {
+        for (final shopId in linesByShop.keys)
+          shopId: firestore.collection('customer_orders').doc(),
+      };
       await firestore.runTransaction((transaction) async {
         final snapshots = <String, DocumentSnapshot<Map<String, dynamic>>>{};
         for (final line in checkoutLines) {
@@ -1029,54 +1043,71 @@ class _CartPageState extends State<_CartPage> {
             'updatedAt': FieldValue.serverTimestamp(),
           });
         }
-        transaction.set(orderRef, {
-          'id': orderRef.id,
-          'customerId': widget.customer.id,
-          'customerName': widget.customer.name,
-          'customerEmail': widget.customer.email,
-          'customerPhone': customerDoc.data()?['phone'] ?? '',
-          'status': 'placed',
-          'deliveryAddress': customerDoc.data()?['address'] ?? '',
-          'deliveryLocation': customerDoc.data()?['location'],
-          'paymentTiming': paymentTiming,
-          'paymentAmountPolicy': paymentAmount,
-          'requiredPayment': requiredNow,
-          'paidAmount': requiredNow,
-          'paymentStatus': requiredNow >= orderTotal
-              ? 'paid'
-              : (requiredNow > 0 ? 'partial' : 'due_on_delivery'),
-          'lipaNumber': business['lipaNumber'],
-          'paymentBusinessName': business['name'],
-          'subtotal': checkoutTotal,
-          'shippingFee': shippingFee,
-          'total': orderTotal,
-          'shopIds': checkoutLines
-              .map((line) => line.product.businessId ?? 'default_business')
-              .toSet()
-              .toList(),
-          'shopNames': checkoutLines
-              .map((line) => line.product.shopName ?? 'Shop')
-              .toSet()
-              .toList(),
-          'items': checkoutLines
-              .map(
-                (line) => {
-                  'productId': line.product.id,
-                  'name': line.product.name,
-                  'shopName': line.product.shopName,
-                  'businessId': line.product.businessId,
-                  'quantity': line.quantity,
-                  'unitPrice': line.product.price,
-                  'imageUrl': line.imageUrl,
-                },
-              )
-              .toList(),
-          'statusHistory': [
-            {'status': 'placed', 'at': Timestamp.now()},
-          ],
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        for (final entry in linesByShop.entries) {
+          final shopId = entry.key;
+          final shopLines = entry.value;
+          final shop = shops[shopId]!;
+          final orderRef = orderRefs[shopId]!;
+          final subtotal = shopLines.fold<double>(
+            0,
+            (total, line) => total + line.product.price * line.quantity,
+          );
+          final shippingFee = shopLines.fold<double>(
+            0,
+            (total, line) =>
+                total +
+                (line.product.freeShipping ? 0 : line.product.shippingFee),
+          );
+          final orderTotal = subtotal + shippingFee;
+          final requiredNow = requiredPayments[shopId] ?? 0;
+          transaction.set(orderRef, {
+            'id': orderRef.id,
+            'customerId': widget.customer.id,
+            'customerName': widget.customer.name,
+            'customerEmail': widget.customer.email,
+            'customerPhone': customerDoc.data()?['phone'] ?? '',
+            'status': 'placed',
+            'deliveryAddress': customerDoc.data()?['address'] ?? '',
+            'deliveryLocation': customerDoc.data()?['location'],
+            'paymentTiming':
+                shop['onlinePaymentTiming'] as String? ?? 'before_order',
+            'paymentAmountPolicy':
+                shop['onlinePaymentAmount'] as String? ?? 'full',
+            'requiredPayment': requiredNow,
+            'paidAmount': requiredNow,
+            'paymentStatus': requiredNow >= orderTotal
+                ? 'paid'
+                : (requiredNow > 0 ? 'partial' : 'due_on_delivery'),
+            'lipaNumber': shop['lipaNumber'],
+            'paymentBusinessName':
+                shop['name'] ?? shopLines.first.product.shopName,
+            'subtotal': subtotal,
+            'shippingFee': shippingFee,
+            'total': orderTotal,
+            'shopIds': [shopId],
+            'shopNames': [
+              shop['name'] ?? shopLines.first.product.shopName ?? 'Shop',
+            ],
+            'items': shopLines
+                .map(
+                  (line) => {
+                    'productId': line.product.id,
+                    'name': line.product.name,
+                    'shopName': line.product.shopName,
+                    'businessId': shopId,
+                    'quantity': line.quantity,
+                    'unitPrice': line.product.price,
+                    'imageUrl': line.imageUrl,
+                  },
+                )
+                .toList(),
+            'statusHistory': [
+              {'status': 'placed', 'at': Timestamp.now()},
+            ],
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
       });
       for (final line in checkoutLines) {
         widget.cart.remove(line.product.id);
@@ -1085,7 +1116,11 @@ class _CartPageState extends State<_CartPage> {
       widget.changed();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Order placed successfully.')),
+          SnackBar(
+            content: Text(
+              '${linesByShop.length} shop order${linesByShop.length == 1 ? '' : 's'} placed successfully.',
+            ),
+          ),
         );
       }
     } catch (e) {
