@@ -1,17 +1,24 @@
-# point_of_sale
+# Hiakintho POS App
 
-A new Flutter project.
+A multi-platform Flutter point-of-sale and marketplace application with inventory, sales, purchasing, reporting, customer ordering, delivery management, notifications, administration, Firebase services, and Windows installer tooling.
 
-## Getting Started
+## Project components
 
-This project is a starting point for a Flutter application.
+- Flutter applications for Android, iOS, Windows, Linux, macOS, and web
+- Firebase Authentication, Firestore, Storage, and Cloud Functions integration
+- Customer marketplace and shop-specific order processing
+- Inventory, POS checkout, purchases, expenses, reports, and administration
+- Delivery assignment and order tracking
+- Web administration system
+- Windows installer build scripts
 
-A few resources to get you started if this is your first Flutter project:
+## Getting started
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+Install Flutter and run:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```shell
+flutter pub get
+flutter run
+```
+
+Local signing keys, passwords, dependency caches, and generated build artifacts are intentionally excluded from this repository.
