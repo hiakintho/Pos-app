@@ -45,30 +45,37 @@ class DashboardScreen extends StatelessWidget {
                     .limit(20)
                     .snapshots(),
                 builder: (context, purchaseSnapshot) {
-                  if (productSnapshot.hasError ||
-                      salesSnapshot.hasError ||
-                      purchaseSnapshot.hasError) {
-                    return Center(
-                      child: Text(
-                        'Could not load dashboard data from Firebase.',
-                      ),
-                    );
-                  }
-
-                  if (!productSnapshot.hasData ||
-                      !salesSnapshot.hasData ||
-                      !purchaseSnapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  final data = _DashboardData.fromSnapshots(
-                    productSnapshot.data!.docs,
-                    salesSnapshot.data!.docs,
-                    purchaseSnapshot.data!.docs,
-                    user.businessId ?? 'default_business',
+                  return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('customer_orders')
+                        .snapshots(),
+                    builder: (context, onlineSnapshot) {
+                      if (productSnapshot.hasError ||
+                          salesSnapshot.hasError ||
+                          purchaseSnapshot.hasError ||
+                          onlineSnapshot.hasError) {
+                        return const Center(
+                          child: Text(
+                            'Could not load dashboard data from Firebase.',
+                          ),
+                        );
+                      }
+                      if (!productSnapshot.hasData ||
+                          !salesSnapshot.hasData ||
+                          !purchaseSnapshot.hasData ||
+                          !onlineSnapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final data = _DashboardData.fromSnapshots(
+                        productSnapshot.data!.docs,
+                        salesSnapshot.data!.docs,
+                        purchaseSnapshot.data!.docs,
+                        onlineSnapshot.data!.docs,
+                        user.businessId ?? 'default_business',
+                      );
+                      return _DashboardContent(user: user, data: data);
+                    },
                   );
-
-                  return _DashboardContent(user: user, data: data);
                 },
               );
             },
@@ -132,13 +139,25 @@ class _DashboardContent extends StatelessWidget {
                   childAspectRatio: columns == 1 ? 3.2 : 2.1,
                   children: [
                     _StatCard(
-                      title: 'Sales Total',
+                      title: 'Total Sales (All Channels)',
                       value: currencyFormat.format(data.salesTotal),
                       icon: Icons.payments,
                       color: Colors.green,
                     ),
                     _StatCard(
-                      title: 'Sales Count',
+                      title: 'POS Sales',
+                      value: currencyFormat.format(data.posSalesTotal),
+                      icon: Icons.point_of_sale,
+                      color: Colors.blue,
+                    ),
+                    _StatCard(
+                      title: 'Online Sales',
+                      value: currencyFormat.format(data.onlineSalesTotal),
+                      icon: Icons.shopping_bag,
+                      color: Colors.purple,
+                    ),
+                    _StatCard(
+                      title: 'All Transactions',
                       value: data.salesCount.toString(),
                       icon: Icons.receipt_long,
                       color: Colors.blue,
@@ -576,6 +595,10 @@ class _DashboardData {
   final int lowStockCount;
   final int salesCount;
   final double salesTotal;
+  final double posSalesTotal;
+  final double onlineSalesTotal;
+  final int posSalesCount;
+  final int onlineSalesCount;
   final List<Product> lowStockProducts;
   final List<_SaleSummary> recentSales;
   final List<_PurchaseSummary> recentPurchases;
@@ -589,6 +612,10 @@ class _DashboardData {
     required this.lowStockCount,
     required this.salesCount,
     required this.salesTotal,
+    required this.posSalesTotal,
+    required this.onlineSalesTotal,
+    required this.posSalesCount,
+    required this.onlineSalesCount,
     required this.lowStockProducts,
     required this.recentSales,
     required this.recentPurchases,
@@ -602,6 +629,7 @@ class _DashboardData {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> productDocs,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> saleDocs,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> purchaseDocs,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> onlineOrderDocs,
     String businessId,
   ) {
     final scopedProductDocs = productDocs.where((doc) {
@@ -636,12 +664,24 @@ class _DashboardData {
           ..sort((a, b) => a.stockQuantity.compareTo(b.stockQuantity));
 
     final recentSales = scopedSaleDocs.map(_SaleSummary.fromDoc).toList();
+    final onlineOrders = onlineOrderDocs.where((doc) {
+      final data = doc.data();
+      final shopIds = (data['shopIds'] as List? ?? const []).map(
+        (value) => value.toString(),
+      );
+      return shopIds.contains(businessId) && data['status'] != 'cancelled';
+    }).toList();
     final recentPurchases = scopedPurchaseDocs
         .map(_PurchaseSummary.fromDoc)
         .toList();
-    final salesTotal = recentSales.fold<double>(
+    final posSalesTotal = recentSales.fold<double>(
       0,
       (total, sale) => total + sale.total,
+    );
+    final onlineSalesTotal = onlineOrders.fold<double>(
+      0,
+      (total, order) =>
+          total + ((order.data()['total'] as num?)?.toDouble() ?? 0),
     );
     final categoryCounts = <String, double>{};
     for (final product in products) {
@@ -659,12 +699,17 @@ class _DashboardData {
         ifAbsent: () => sale.total,
       );
     }
+    if (onlineSalesTotal > 0) paymentTotals['Online'] = onlineSalesTotal;
 
     return _DashboardData(
       productCount: products.length,
       lowStockCount: lowStockProducts.length,
-      salesCount: scopedSaleDocs.length,
-      salesTotal: salesTotal,
+      salesCount: scopedSaleDocs.length + onlineOrders.length,
+      salesTotal: posSalesTotal + onlineSalesTotal,
+      posSalesTotal: posSalesTotal,
+      onlineSalesTotal: onlineSalesTotal,
+      posSalesCount: scopedSaleDocs.length,
+      onlineSalesCount: onlineOrders.length,
       lowStockProducts: lowStockProducts.take(6).toList(),
       recentSales: recentSales.take(6).toList(),
       recentPurchases: recentPurchases.take(6).toList(),

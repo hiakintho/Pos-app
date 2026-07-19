@@ -80,38 +80,52 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         .limit(300)
                         .snapshots(),
                     builder: (context, expenseSnapshot) {
-                      if (salesSnapshot.hasError ||
-                          productSnapshot.hasError ||
-                          purchaseSnapshot.hasError ||
-                          expenseSnapshot.hasError) {
-                        return const Center(
-                          child: Text('Could not load Firebase report data.'),
-                        );
-                      }
+                      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: FirebaseFirestore.instance
+                            .collection('customer_orders')
+                            .snapshots(),
+                        builder: (context, onlineSnapshot) {
+                          if (salesSnapshot.hasError ||
+                              productSnapshot.hasError ||
+                              purchaseSnapshot.hasError ||
+                              expenseSnapshot.hasError ||
+                              onlineSnapshot.hasError) {
+                            return const Center(
+                              child: Text(
+                                'Could not load Firebase report data.',
+                              ),
+                            );
+                          }
 
-                      if (!salesSnapshot.hasData ||
-                          !productSnapshot.hasData ||
-                          !purchaseSnapshot.hasData ||
-                          !expenseSnapshot.hasData) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
+                          if (!salesSnapshot.hasData ||
+                              !productSnapshot.hasData ||
+                              !purchaseSnapshot.hasData ||
+                              !expenseSnapshot.hasData ||
+                              !onlineSnapshot.hasData) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
 
-                      final report = _ReportData.fromSnapshots(
-                        businessId: _businessId,
-                        dateRange: _dateRange,
-                        sales: salesSnapshot.data!.docs,
-                        products: productSnapshot.data!.docs,
-                        purchases: purchaseSnapshot.data!.docs,
-                        expenses: expenseSnapshot.data!.docs,
-                      );
+                          final report = _ReportData.fromSnapshots(
+                            businessId: _businessId,
+                            dateRange: _dateRange,
+                            sales: salesSnapshot.data!.docs,
+                            products: productSnapshot.data!.docs,
+                            purchases: purchaseSnapshot.data!.docs,
+                            expenses: expenseSnapshot.data!.docs,
+                            onlineOrders: onlineSnapshot.data!.docs,
+                          );
 
-                      return _ReportsContent(
-                        report: report,
-                        dateRange: _dateRange,
-                        onPickDateRange: _pickDateRange,
-                        onClearDateRange: _dateRange == null
-                            ? null
-                            : () => setState(() => _dateRange = null),
+                          return _ReportsContent(
+                            report: report,
+                            dateRange: _dateRange,
+                            onPickDateRange: _pickDateRange,
+                            onClearDateRange: _dateRange == null
+                                ? null
+                                : () => setState(() => _dateRange = null),
+                          );
+                        },
                       );
                     },
                   );
@@ -184,6 +198,20 @@ class _ReportsContent extends StatelessWidget {
                         _printSalesRevenue(context, report, money, date),
                   ),
                   _MetricCard(
+                    title: 'POS Revenue',
+                    value: money.format(report.posSalesTotal),
+                    icon: Icons.point_of_sale,
+                    color: Colors.blue,
+                    onPrint: () => _printFinancial(context, report, money),
+                  ),
+                  _MetricCard(
+                    title: 'Online Revenue',
+                    value: money.format(report.onlineSalesTotal),
+                    icon: Icons.shopping_bag,
+                    color: Colors.purple,
+                    onPrint: () => _printFinancial(context, report, money),
+                  ),
+                  _MetricCard(
                     title: 'Transactions',
                     value: report.salesCount.toString(),
                     icon: Icons.receipt_long,
@@ -231,6 +259,11 @@ class _ReportsContent extends StatelessWidget {
           _SimpleBreakdownCard(
             rows: [
               _BreakdownRow('Sales revenue', money.format(report.salesTotal)),
+              _BreakdownRow('POS revenue', money.format(report.posSalesTotal)),
+              _BreakdownRow(
+                'Online revenue',
+                money.format(report.onlineSalesTotal),
+              ),
               _BreakdownRow(
                 'Discounts given',
                 money.format(report.discountsTotal),
@@ -440,6 +473,8 @@ class _ReportsContent extends StatelessWidget {
       headers: const ['Account', 'Amount'],
       rows: [
         ['Sales revenue', money.format(report.salesTotal)],
+        ['POS revenue', money.format(report.posSalesTotal)],
+        ['Online revenue', money.format(report.onlineSalesTotal)],
         ['Discounts given', money.format(report.discountsTotal)],
         ['Tax collected', money.format(report.taxTotal)],
         ['Expenses', money.format(report.expensesTotal)],
@@ -688,6 +723,8 @@ class _BreakdownRow {
 class _ReportData {
   final int salesCount;
   final double salesTotal;
+  final double posSalesTotal;
+  final double onlineSalesTotal;
   final double itemsSold;
   final double stockPurchased;
   final double expensesTotal;
@@ -703,6 +740,8 @@ class _ReportData {
   const _ReportData({
     required this.salesCount,
     required this.salesTotal,
+    required this.posSalesTotal,
+    required this.onlineSalesTotal,
     required this.itemsSold,
     required this.stockPurchased,
     required this.expensesTotal,
@@ -723,6 +762,7 @@ class _ReportData {
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> products,
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> purchases,
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> expenses,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> onlineOrders,
   }) {
     bool inRange(DateTime date) {
       if (dateRange == null) return true;
@@ -763,16 +803,26 @@ class _ReportData {
       return expenseBusinessId == businessId &&
           inRange(_dateFromValue(data['createdAt']));
     }).toList();
+    final scopedOnlineOrders = onlineOrders.where((doc) {
+      final data = doc.data();
+      final shopIds = (data['shopIds'] as List? ?? const []).map(
+        (value) => value.toString(),
+      );
+      return shopIds.contains(businessId) &&
+          data['status'] != 'cancelled' &&
+          inRange(_dateFromValue(data['createdAt']));
+    }).toList();
 
     final paymentTotals = <String, double>{};
     final productQuantities = <String, double>{};
-    var salesTotal = 0.0;
+    var posSalesTotal = 0.0;
+    var onlineSalesTotal = 0.0;
     var itemsSold = 0.0;
     var discountsTotal = 0.0;
     var taxTotal = 0.0;
 
     for (final sale in scopedSales) {
-      salesTotal += sale.total;
+      posSalesTotal += sale.total;
       discountsTotal += sale.discount;
       taxTotal += sale.tax;
       paymentTotals[sale.paymentMethod] =
@@ -784,6 +834,19 @@ class _ReportData {
             (productQuantities[item.name] ?? 0) + item.quantity;
       }
     }
+    for (final order in scopedOnlineOrders) {
+      final data = order.data();
+      onlineSalesTotal += (data['total'] as num?)?.toDouble() ?? 0;
+      for (final item in (data['items'] as List? ?? const [])) {
+        if (item is! Map) continue;
+        final name = item['name']?.toString() ?? 'Product';
+        final quantity = (item['quantity'] as num?)?.toDouble() ?? 0;
+        itemsSold += quantity;
+        productQuantities[name] = (productQuantities[name] ?? 0) + quantity;
+      }
+    }
+    final salesTotal = posSalesTotal + onlineSalesTotal;
+    if (onlineSalesTotal > 0) paymentTotals['Online'] = onlineSalesTotal;
 
     final topProducts =
         productQuantities.entries
@@ -814,8 +877,10 @@ class _ReportData {
     final grossProfit = salesTotal - expensesTotal;
 
     return _ReportData(
-      salesCount: scopedSales.length,
+      salesCount: scopedSales.length + scopedOnlineOrders.length,
       salesTotal: salesTotal,
+      posSalesTotal: posSalesTotal,
+      onlineSalesTotal: onlineSalesTotal,
       itemsSold: itemsSold,
       stockPurchased: stockPurchased,
       expensesTotal: expensesTotal,

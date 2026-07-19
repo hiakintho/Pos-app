@@ -369,6 +369,11 @@ class _SystemOwnerPageState extends State<SystemOwnerPage> {
               onSearch: _openSearch,
               onHelp: _openHelpManagement,
               onProfile: _openProfileManagement,
+              onSystemOwners: () => showDialog<void>(
+                context: context,
+                builder: (_) => const _AddSystemOwnerDialog(),
+              ),
+              onLogout: () => auth.FirebaseAuth.instance.signOut(),
             )
           : null,
       appBar: AppBar(
@@ -587,11 +592,15 @@ class _SystemMobileDrawer extends StatelessWidget {
   final VoidCallback onSearch;
   final VoidCallback onHelp;
   final VoidCallback onProfile;
+  final VoidCallback onSystemOwners;
+  final VoidCallback onLogout;
   const _SystemMobileDrawer({
     required this.onSection,
     required this.onSearch,
     required this.onHelp,
     required this.onProfile,
+    required this.onSystemOwners,
+    required this.onLogout,
   });
 
   @override
@@ -648,6 +657,23 @@ class _SystemMobileDrawer extends StatelessWidget {
             onTap: () {
               Navigator.pop(context);
               onProfile();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.admin_panel_settings),
+            title: const Text('System Owners'),
+            onTap: () {
+              Navigator.pop(context);
+              onSystemOwners();
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text('Logout', style: TextStyle(color: Colors.red)),
+            onTap: () {
+              Navigator.pop(context);
+              onLogout();
             },
           ),
         ],
@@ -785,6 +811,7 @@ class _BusinessHelpManagementPageState
                     role: UserRole.superAdmin,
                     businessId: selected.id,
                   ),
+                  showLogout: false,
                 ),
               ),
           ],

@@ -74,6 +74,11 @@ const List<_FeatureDefinition> _systemFeatures = [
     'View sales across business branches',
   ),
   _FeatureDefinition('reports', 'Reports', 'View reports and analytics'),
+  _FeatureDefinition(
+    'business_management',
+    'Business Management',
+    'Accounting, employees, assets, accounts and stock transfers',
+  ),
   _FeatureDefinition('settings', 'Settings', 'Open administration settings'),
   _FeatureDefinition(
     'user_management',
@@ -95,7 +100,13 @@ const List<_FeatureDefinition> _systemFeatures = [
 class SettingsScreen extends StatefulWidget {
   final User user;
   final VoidCallback? onOpenMenu;
-  const SettingsScreen({super.key, required this.user, this.onOpenMenu});
+  final bool showLogout;
+  const SettingsScreen({
+    super.key,
+    required this.user,
+    this.onOpenMenu,
+    this.showLogout = true,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -298,16 +309,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Logout', style: TextStyle(color: Colors.red)),
-            onTap: () async {
-              await auth.FirebaseAuth.instance.signOut();
-              if (!context.mounted) return;
-              Navigator.of(context).popUntil((route) => route.isFirst);
-            },
-          ),
+          if (widget.showLogout) ...[
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Logout', style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                await auth.FirebaseAuth.instance.signOut();
+                if (!context.mounted) return;
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
+            ),
+          ],
         ],
       ),
     );

@@ -23,6 +23,7 @@ import 'customer_support_page.dart';
 import 'notification_inbox_page.dart';
 import 'notification_service.dart';
 import 'delivery_management_page.dart';
+import 'business_management_screen.dart';
 
 const Color _spotifyGreen = Color(0xFF1DB954);
 const Color _spotifyBlack = Color(0xFF050505);
@@ -421,6 +422,7 @@ class _MainNavigationState extends State<MainNavigation> {
                   'purchases': user.role == UserRole.superAdmin,
                   'sales_management': user.role == UserRole.superAdmin,
                   'online_sales': user.role == UserRole.superAdmin,
+                  'business_management': user.role == UserRole.superAdmin,
                   'reports': true,
                   'settings': user.role == UserRole.superAdmin,
                 };
@@ -506,6 +508,15 @@ class _MainNavigationState extends State<MainNavigation> {
         ),
       if (widget.user.role == UserRole.superAdmin)
         _NavigationItem(
+          label: 'Business Management',
+          icon: Icons.account_balance,
+          screen: BusinessManagementScreen(
+            user: widget.user,
+            onOpenMenu: _openDrawer,
+          ),
+        ),
+      if (widget.user.role == UserRole.superAdmin)
+        _NavigationItem(
           label: 'Delivery Team',
           icon: Icons.delivery_dining,
           screen: DeliveryBoyManagementPage(
@@ -554,6 +565,7 @@ String _subscriptionParent(String featureId) => switch (featureId) {
   'manage_price_groups' ||
   'branch_sales_monitoring' => 'sales_management',
   'user_management' || 'role_management' || 'branch_management' => 'settings',
+  'business_management' => 'reports',
   _ => featureId,
 };
 
