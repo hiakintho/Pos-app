@@ -11,6 +11,7 @@ import 'package:printing/printing.dart';
 import 'commerce_rules.dart';
 import 'database_helper.dart';
 import 'models.dart';
+import 'notification_inbox_page.dart';
 
 class POSScreen extends StatefulWidget {
   final User user;
@@ -343,6 +344,7 @@ class _POSScreenState extends State<POSScreen> {
           'Complete this ${payment.isCredit ? 'credit ' : ''}sale for ${_money(_totalAmount)}?',
         ),
         actions: [
+          NotificationBellButton(user: widget.user),
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
@@ -405,13 +407,25 @@ class _POSScreenState extends State<POSScreen> {
         customerName: payment.customerName,
       );
 
-      await _saveSaleToFirebase(sale);
       await _recordCashMovement(sale);
       await DatabaseHelper.instance.insertSale(sale);
-      await DatabaseHelper.instance.updateSaleSyncStatus(sale.id, 1);
+      for (final item in receiptItems) {
+        await DatabaseHelper.instance.updateProductStock(
+          item.product.id,
+          item.product.stockQuantity - item.quantity,
+        );
+      }
 
       if (!mounted) return;
-      await _printReceipt(sale, receiptItems);
+      final receiptGenerated = await _printReceipt(sale, receiptItems);
+      var syncedToFirebase = false;
+      try {
+        await _saveSaleToFirebase(sale, receiptItems);
+        await DatabaseHelper.instance.updateSaleSyncStatus(sale.id, 1);
+        syncedToFirebase = true;
+      } catch (e) {
+        debugPrint('Sale saved locally but Firebase sync failed: $e');
+      }
       if (!mounted) return;
       setState(() {
         _cart.clear();
@@ -422,7 +436,13 @@ class _POSScreenState extends State<POSScreen> {
         _isCheckingOut = false;
       });
       await _loadProducts();
-      _showMessage('Sale completed and saved.');
+      _showMessage(
+        [
+          'Sale completed',
+          if (receiptGenerated) 'receipt generated',
+          syncedToFirebase ? 'synced' : 'saved locally',
+        ].join(', '),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _isCheckingOut = false);
@@ -460,86 +480,59 @@ class _POSScreenState extends State<POSScreen> {
     );
   }
 
-  Future<void> _printReceipt(Sale sale, List<CartItem> items) async {
+  Future<bool> _printReceipt(Sale sale, List<CartItem> items) async {
     final dateFormat = DateFormat('yyyy-MM-dd HH:mm');
     final doc = pw.Document();
-    final cashKept = _cashKeptForSale(sale);
 
     doc.addPage(
-      pw.Page(
-        build: (context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Center(
-                child: pw.Text(
-                  'POS APP',
-                  style: pw.TextStyle(
-                    fontSize: 18,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-              pw.SizedBox(height: 8),
-              pw.Text('Receipt: ${sale.id}'),
-              pw.Text(
-                'Date: ${dateFormat.format(DateTime.parse(sale.timestamp))}',
-              ),
-              pw.Text('Cashier: ${widget.user.name}'),
-              pw.Text('Payment: ${sale.paymentMethod}'),
-              if (sale.customerName?.isNotEmpty == true)
-                pw.Text('Customer: ${sale.customerName}'),
-              pw.Divider(),
-              pw.TableHelper.fromTextArray(
-                headers: const ['Item', 'Qty', 'Price', 'Total'],
-                data: items.map((item) {
-                  return [
-                    item.product.name,
-                    item.quantity.toString(),
-                    _money(item.unitPrice),
-                    _money(item.total),
-                  ];
-                }).toList(),
-                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                cellAlignment: pw.Alignment.centerLeft,
-              ),
-              pw.Divider(),
-              pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Text('Discount: ${_money(sale.discountAmount)}'),
-              ),
-              pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Text('Tax: ${_money(sale.taxAmount)}'),
-              ),
-              pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Text(
-                  'TOTAL: ${_money(sale.totalAmount)}',
-                  style: pw.TextStyle(
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-              pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Text('Cash received: ${_money(sale.paidAmount)}'),
-              ),
-              pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Text('Change returned: ${_money(sale.changeAmount)}'),
-              ),
-              if (sale.paymentMethod == 'Cash' && !sale.isCredit)
-                pw.Align(
-                  alignment: pw.Alignment.centerRight,
-                  child: pw.Text('Net cash kept: ${_money(cashKept)}'),
-                ),
-              pw.SizedBox(height: 16),
-              pw.Center(child: pw.Text('Thank you!')),
-            ],
-          );
-        },
+      pw.MultiPage(
+        build: (context) => [
+          pw.Center(
+            child: pw.Text(
+              'POS APP',
+              style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+            ),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Text('Receipt: ${sale.id}'),
+          pw.Text('Date: ${dateFormat.format(DateTime.parse(sale.timestamp))}'),
+          pw.Text('Cashier: ${widget.user.name}'),
+          pw.Text('Payment: ${sale.paymentMethod}'),
+          if (sale.customerName?.isNotEmpty == true)
+            pw.Text('Customer: ${sale.customerName}'),
+          pw.SizedBox(height: 12),
+          pw.TableHelper.fromTextArray(
+            headers: const ['Item', 'Qty', 'Price', 'Total'],
+            data: items.map((item) {
+              return [
+                item.product.name,
+                item.quantity.toStringAsFixed(0),
+                _money(item.unitPrice),
+                _money(item.total),
+              ];
+            }).toList(),
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            cellAlignment: pw.Alignment.centerLeft,
+          ),
+          pw.SizedBox(height: 12),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text('Discount: ${_money(sale.discountAmount)}'),
+          ),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text('Tax: ${_money(sale.taxAmount)}'),
+          ),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'TOTAL: ${_money(sale.totalAmount)}',
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+            ),
+          ),
+          pw.SizedBox(height: 16),
+          pw.Center(child: pw.Text('Thank you!')),
+        ],
       ),
     );
 
@@ -548,9 +541,13 @@ class _POSScreenState extends State<POSScreen> {
         name: 'receipt_${sale.id}.pdf',
         onLayout: (_) async => doc.save(),
       );
+      return true;
     } on MissingPluginException {
-      if (!mounted) return;
-      _showMessage('Printing plugin is not registered. Rebuild the app.');
+      if (!mounted) return false;
+      _showMessage(
+        'Printing plugin is not registered. Stop the app completely and rebuild it.',
+      );
+      return false;
     }
   }
 
@@ -722,45 +719,24 @@ class _POSScreenState extends State<POSScreen> {
     );
   }
 
-  Future<void> _saveSaleToFirebase(Sale sale) async {
+  Future<void> _saveSaleToFirebase(Sale sale, List<CartItem> items) async {
     final firestore = FirebaseFirestore.instance;
-    final productRefs = {
-      for (final item in _cart)
-        item.product.id: firestore.collection('products').doc(item.product.id),
-    };
+    final batch = firestore.batch();
     final saleRef = firestore.collection('sales').doc(sale.id);
 
-    await firestore.runTransaction((transaction) async {
-      final snapshots = <String, DocumentSnapshot<Map<String, dynamic>>>{};
-      for (final entry in productRefs.entries) {
-        snapshots[entry.key] = await transaction.get(entry.value);
-      }
-
-      for (final item in _cart) {
-        final snapshot = snapshots[item.product.id];
-        if (snapshot == null || !snapshot.exists) {
-          throw Exception('${item.product.name} is no longer available.');
-        }
-
-        final data = snapshot.data() ?? {};
-        final stock = (data['stockQuantity'] as num?)?.toDouble() ?? 0;
-        if (stock < item.quantity) {
-          throw Exception(
-            '${item.product.name} only has ${stock.toStringAsFixed(0)} left.',
-          );
-        }
-
-        transaction.update(productRefs[item.product.id]!, {
-          'stockQuantity': stock - item.quantity,
-        });
-      }
-
-      transaction.set(saleRef, {
-        ...sale.toMap(),
-        'businessId': _businessId,
-        'isSynced': 1,
+    for (final item in items) {
+      batch.update(firestore.collection('products').doc(item.product.id), {
+        'stockQuantity': FieldValue.increment(-item.quantity),
       });
+    }
+
+    batch.set(saleRef, {
+      ...sale.toMap(),
+      'businessId': _businessId,
+      'isSynced': 1,
     });
+
+    await batch.commit();
   }
 
   void _showMessage(String message) {

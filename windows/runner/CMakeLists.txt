@@ -20,6 +20,14 @@ add_executable(${BINARY_NAME} WIN32
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
 
+# Dart debugging does not need native linker PDB files, and some Visual Studio
+# toolchains can fail with LNK1318 while updating point_of_sale.pdb.
+if(MSVC)
+  target_compile_options(${BINARY_NAME} PRIVATE "$<$<CONFIG:Debug>:/Z7>")
+  target_link_options(${BINARY_NAME} PRIVATE "$<$<CONFIG:Debug>:/DEBUG:NONE>")
+  target_link_options(${BINARY_NAME} PRIVATE "$<$<CONFIG:Debug>:/INCREMENTAL:NO>")
+endif()
+
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_MAJOR=${FLUTTER_VERSION_MAJOR}")

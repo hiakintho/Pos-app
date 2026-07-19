@@ -4,6 +4,9 @@ class UserRole {
   static const String supervisor = 'supervisor';
   static const String cashier = 'cashier';
   static const String supplier = 'supplier';
+  static const String customer = 'customer';
+  static const String deliveryBoy = 'delivery_boy';
+  static const String systemOwner = 'system_owner';
 }
 
 class RolePermissions {
@@ -165,9 +168,29 @@ class Product {
   final String name;
   final String barcode;
   final double price;
+  final double productCost;
   final double stockQuantity;
   final String category;
+  final String? priceGroupId;
+  final String? brandName;
+  final String? unitOfMeasurement;
+  final String? supplierId;
+  final String? supplierName;
+  final String? taxRuleId;
+  final String? branchId;
+  final String? businessId;
+  final String? batchNumber;
   final String? expiryDate;
+  final String? manufacturingDate;
+  final String? description;
+  final bool isAvailableOnline;
+  final String? shopName;
+  final String? lipaNumber;
+  final List<String> imageUrls;
+  final bool freeShipping;
+  final double shippingFee;
+  final String paymentTiming;
+  final String paymentAmountPolicy;
   final int isSynced;
 
   Product({
@@ -175,9 +198,29 @@ class Product {
     required this.name,
     required this.barcode,
     required this.price,
+    this.productCost = 0,
     required this.stockQuantity,
     required this.category,
+    this.priceGroupId,
+    this.brandName,
+    this.unitOfMeasurement,
+    this.supplierId,
+    this.supplierName,
+    this.taxRuleId,
+    this.branchId,
+    this.businessId,
+    this.batchNumber,
     this.expiryDate,
+    this.manufacturingDate,
+    this.description,
+    this.isAvailableOnline = false,
+    this.shopName,
+    this.lipaNumber,
+    this.imageUrls = const [],
+    this.freeShipping = true,
+    this.shippingFee = 0,
+    this.paymentTiming = 'business_default',
+    this.paymentAmountPolicy = 'business_default',
     this.isSynced = 0,
   });
 
@@ -187,9 +230,29 @@ class Product {
       'name': name,
       'barcode': barcode,
       'price': price,
+      'productCost': productCost,
       'stockQuantity': stockQuantity,
       'category': category,
+      'priceGroupId': priceGroupId,
+      'brandName': brandName,
+      'unitOfMeasurement': unitOfMeasurement,
+      'supplierId': supplierId,
+      'supplierName': supplierName,
+      'taxRuleId': taxRuleId,
+      'branchId': branchId,
+      'businessId': businessId,
+      'batchNumber': batchNumber,
       'expiryDate': expiryDate,
+      'manufacturingDate': manufacturingDate,
+      'description': description,
+      'isAvailableOnline': isAvailableOnline,
+      'shopName': shopName,
+      'lipaNumber': lipaNumber,
+      'imageUrls': imageUrls.join(','),
+      'freeShipping': freeShipping,
+      'shippingFee': shippingFee,
+      'paymentTiming': paymentTiming,
+      'paymentAmountPolicy': paymentAmountPolicy,
       'isSynced': isSynced,
     };
   }
@@ -200,9 +263,36 @@ class Product {
       name: _stringValue(map['name'], fallback: 'Unnamed product'),
       barcode: _stringValue(map['barcode']),
       price: _doubleValue(map['price']),
+      productCost: _doubleValue(map['productCost']),
       stockQuantity: _doubleValue(map['stockQuantity']),
       category: _stringValue(map['category'], fallback: 'General'),
+      priceGroupId: _nullableStringValue(map['priceGroupId']),
+      brandName: _nullableStringValue(map['brandName']),
+      unitOfMeasurement: _nullableStringValue(map['unitOfMeasurement']),
+      supplierId: _nullableStringValue(map['supplierId']),
+      supplierName: _nullableStringValue(map['supplierName']),
+      taxRuleId: _nullableStringValue(map['taxRuleId']),
+      branchId: _nullableStringValue(map['branchId']),
+      businessId: _nullableStringValue(map['businessId']),
+      batchNumber: _nullableStringValue(map['batchNumber']),
       expiryDate: _nullableStringValue(map['expiryDate']),
+      manufacturingDate: _nullableStringValue(map['manufacturingDate']),
+      description: _nullableStringValue(map['description']),
+      isAvailableOnline:
+          map['isAvailableOnline'] == true || map['isAvailableOnline'] == 1,
+      shopName: _nullableStringValue(map['shopName']),
+      lipaNumber: _nullableStringValue(map['lipaNumber']),
+      imageUrls: _stringListValue(map['imageUrls']),
+      freeShipping: map['freeShipping'] != false,
+      shippingFee: _doubleValue(map['shippingFee']),
+      paymentTiming: _stringValue(
+        map['paymentTiming'],
+        fallback: 'business_default',
+      ),
+      paymentAmountPolicy: _stringValue(
+        map['paymentAmountPolicy'],
+        fallback: 'business_default',
+      ),
       isSynced: map['isSynced'] ?? 0,
     );
   }

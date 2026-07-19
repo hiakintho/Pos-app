@@ -1,0 +1,124 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Fragment>
+        <DirectoryRef Id="INSTALLFOLDER">
+            <Directory Id="dir76A8B56EDC1C4DD3CB4177F3704BC91E" Name="data" />
+        </DirectoryRef>
+    </Fragment>
+    <Fragment>
+        <ComponentGroup Id="ReleaseFiles">
+            <Component Id="cmp21D9E3FDA6E2285497124FD2D234C574" Directory="INSTALLFOLDER" Guid="{55254873-8D59-4038-B390-D4A26837EE65}">
+                <File Id="fil26900A7F5B0B47BFA2654945827A2CF0" KeyPath="yes" Source="$(var.ReleaseDir)\cloud_firestore_plugin.lib" />
+            </Component>
+            <Component Id="cmpDC1A9F2C245EB62FF62E8E76DC4558BC" Directory="INSTALLFOLDER" Guid="{07426A26-7BAC-4F1D-A9C0-2E1EBE6FD600}">
+                <File Id="fil682AF06103DE6B1C2301E8A34A985832" KeyPath="yes" Source="$(var.ReleaseDir)\connectivity_plus_plugin.dll" />
+            </Component>
+            <Component Id="cmpE625E77F522637C094C5867D5E084A27" Directory="INSTALLFOLDER" Guid="{ABBF2EAF-100A-4273-806F-F6B7B9450A94}">
+                <File Id="fil31401CE1FB9E3C72D10B649266643710" KeyPath="yes" Source="$(var.ReleaseDir)\file_selector_windows_plugin.dll" />
+            </Component>
+            <Component Id="cmp18B879AB425CDBB5338CA667C54422B8" Directory="INSTALLFOLDER" Guid="{6BB13CE2-27DB-47CA-953D-B789100F46F6}">
+                <File Id="filDDA889AFEABF8D3DED07006111D133C2" KeyPath="yes" Source="$(var.ReleaseDir)\firebase_auth_plugin.lib" />
+            </Component>
+            <Component Id="cmp9F17A6A9C77D24095F8ED59E27998762" Directory="INSTALLFOLDER" Guid="{20D8B048-6750-45C5-BD3F-DF6E0F2DB06E}">
+                <File Id="fil062E75741B1280DA64E93626042FFEBB" KeyPath="yes" Source="$(var.ReleaseDir)\firebase_core_plugin.lib" />
+            </Component>
+            <Component Id="cmp80241192263445771A01C0D403A0EE5E" Directory="INSTALLFOLDER" Guid="{C123C5B6-99FC-4D98-95F2-51BAE7A9DA59}">
+                <File Id="fil286E76FF1D3A5F1CAD91C8540B7D518B" KeyPath="yes" Source="$(var.ReleaseDir)\firebase_storage_plugin.lib" />
+            </Component>
+            <Component Id="cmpDC22F85144003CB2F05080B8CF79FC46" Directory="INSTALLFOLDER" Guid="{3EA5B66C-2219-4A46-B87A-38BB45581CC7}">
+                <File Id="fil230F9A11CF93D3D1A94FAA7A9D69118F" KeyPath="yes" Source="$(var.ReleaseDir)\flutter_windows.dll" />
+            </Component>
+            <Component Id="cmpE9F08FAD2A628FCE472306FE8DCE93D5" Directory="INSTALLFOLDER" Guid="{D9227382-0A65-4013-8A4D-EFB4C3ABEAE7}">
+                <File Id="fil30EDA5C30D6FBF24B7553A1EAE1D4103" KeyPath="yes" Source="$(var.ReleaseDir)\pdfium.dll" />
+            </Component>
+            <Component Id="cmp70B486C5150EAD44AE2519C93019CA16" Directory="INSTALLFOLDER" Guid="{7A684941-D3BF-4149-A2DE-3F3820AA7362}">
+                <File Id="filB49D35EA06A82DCC430D2B7FCD30EEDD" KeyPath="yes" Source="$(var.ReleaseDir)\point_of_sale.exe" />
+            </Component>
+            <Component Id="cmp7C58016ACF5FABE7E40E62C6D4F88980" Directory="INSTALLFOLDER" Guid="{B7A4C23E-E25A-4D90-9742-9D6362523FD8}">
+                <File Id="fil574D60675E5DDAC8F21FC494ECC04588" KeyPath="yes" Source="$(var.ReleaseDir)\point_of_sale.exp" />
+            </Component>
+            <Component Id="cmpA112FE611D74BFF7F9F325B629E5FCCE" Directory="INSTALLFOLDER" Guid="{C8FB6E56-FF48-4497-AEB1-A65108154584}">
+                <File Id="fil900A8CE5BBE21C9FD0838C486B3DD748" KeyPath="yes" Source="$(var.ReleaseDir)\point_of_sale.lib" />
+            </Component>
+            <Component Id="cmp299587F2823208A846ADF81281814C14" Directory="INSTALLFOLDER" Guid="{2E1A9D7F-F402-4209-9524-06F1FE02F598}">
+                <File Id="fil539970497540B90BFFB15CF09278FCD0" KeyPath="yes" Source="$(var.ReleaseDir)\printing_plugin.dll" />
+            </Component>
+            <Component Id="cmp01000D74F559983AC9750C3E87771662" Directory="INSTALLFOLDER" Guid="{E2C71BBC-A3EF-45BE-ADE5-50DF1F944BE2}">
+                <File Id="fil170F5D00550326081B94D3FD54AB9440" KeyPath="yes" Source="$(var.ReleaseDir)\sqlite3.dll" />
+            </Component>
+            <Component Id="cmpCF83D7D65587D05A151D1E25702E167F" Directory="dir76A8B56EDC1C4DD3CB4177F3704BC91E" Guid="{594718F3-79D8-4F40-98DA-313B71DC4AB8}">
+                <File Id="filC8D6740BEA75F19BA5204B613C03D8A8" KeyPath="yes" Source="$(var.ReleaseDir)\data\app.so" />
+            </Component>
+            <Component Id="cmp0E0DCB81807E433F9DBCEB0D089B25B5" Directory="dir76A8B56EDC1C4DD3CB4177F3704BC91E" Guid="{8ECF9E58-09AB-44BD-8F80-0BEB330F35E8}">
+                <File Id="filFB2ED5EBC1081127146486443055DB0D" KeyPath="yes" Source="$(var.ReleaseDir)\data\icudtl.dat" />
+            </Component>
+            <Component Id="cmp362972CB336FCADAB6FAD4E58ABB50C0" Directory="dir4311D903D70E55164A03E9E9374AC9B0" Guid="{A324F473-7AE7-4045-A669-99A4885D2B7F}">
+                <File Id="filF34A97E96DF56DC7F9FA1F571A635270" KeyPath="yes" Source="$(var.ReleaseDir)\data\flutter_assets\AssetManifest.bin" />
+            </Component>
+            <Component Id="cmp7A9B0136F23F84A4A09D4D0E28D8636B" Directory="dir4311D903D70E55164A03E9E9374AC9B0" Guid="{80230FDD-8C0E-4F3C-AF93-0E4470EC682C}">
+                <File Id="fil130B1805FDD25A50E354B5ADEEAC89F4" KeyPath="yes" Source="$(var.ReleaseDir)\data\flutter_assets\FontManifest.json" />
+            </Component>
+            <Component Id="cmp90671292812F4FFA17B66812D7B02F23" Directory="dir4311D903D70E55164A03E9E9374AC9B0" Guid="{91D91096-49AE-4FD9-8AC6-58CF0F57EBAD}">
+                <File Id="fil7BB5C7A3A762FED9EC3F844577DD0A9E" KeyPath="yes" Source="$(var.ReleaseDir)\data\flutter_assets\NativeAssetsManifest.json" />
+            </Component>
+            <Component Id="cmpB22BCD9EFB853D38668ABE777CBF404C" Directory="dir4311D903D70E55164A03E9E9374AC9B0" Guid="{05FBD5AC-14F6-488A-A636-99DC4C7306AB}">
+                <File Id="fil95F1B70B711016C2E2A74411F6B41801" KeyPath="yes" Source="$(var.ReleaseDir)\data\flutter_assets\NOTICES.Z" />
+            </Component>
+            <Component Id="cmp6AC04D46B038DBE18BF65EB21A8B1E57" Directory="dirE75FB312EAA247C0082F3701FE583C7B" Guid="{382D4439-E8B4-49BF-8D56-37CDF15A7D04}">
+                <File Id="fil86874BB90E64156A78C7EB8A92FDFA10" KeyPath="yes" Source="$(var.ReleaseDir)\data\flutter_assets\assets\images\logo.png" />
+            </Component>
+            <Component Id="cmp9475753282C5250DEC233DF924257EDD" Directory="dirE2A82CA30E4E1381D520C8FF40996653" Guid="{140F34B6-C9EB-42FF-B96B-F37C13A49D05}">
+                <File Id="fil95709FE501C331265C6CAAD00C2EA783" KeyPath="yes" Source="$(var.ReleaseDir)\data\flutter_assets\fonts\MaterialIcons-Regular.otf" />
+            </Component>
+            <Component Id="cmp995EB1479D86208A86E88112F9873FE0" Directory="dir3FA823D26185B1B6457D4DCE2A77C372" Guid="{29179CA8-FDC5-4F56-B23B-7E1CE2121D45}">
+                <File Id="fil7EC168CAE9512344DB7F6000958E43CF" KeyPath="yes" Source="$(var.ReleaseDir)\data\flutter_assets\packages\cupertino_icons\assets\CupertinoIcons.ttf" />
+            </Component>
+            <Component Id="cmpB754D63122F49081C0DAAE0074FBD9C1" Directory="dir5C01D37FD138B424B270832E735CB541" Guid="{E3B07230-F550-402D-8E74-B8A56C873C61}">
+                <File Id="filFA5374F8D6DDBC810796AB1AB906FB74" KeyPath="yes" Source="$(var.ReleaseDir)\data\flutter_assets\shaders\ink_sparkle.frag" />
+            </Component>
+            <Component Id="cmp14E84BBADE26D929C9F8A72C4CFCDFF1" Directory="dir5C01D37FD138B424B270832E735CB541" Guid="{BD91679B-68B9-42D2-8ED7-5F38348FB7D2}">
+                <File Id="fil2CA73DA06B1638CA75CBFC6099280030" KeyPath="yes" Source="$(var.ReleaseDir)\data\flutter_assets\shaders\stretch_effect.frag" />
+            </Component>
+        </ComponentGroup>
+    </Fragment>
+    <Fragment>
+        <DirectoryRef Id="dir5FF583AEA68E18714B78C24666F2A264">
+            <Directory Id="dir3FA823D26185B1B6457D4DCE2A77C372" Name="assets" />
+        </DirectoryRef>
+    </Fragment>
+    <Fragment>
+        <DirectoryRef Id="dir76A8B56EDC1C4DD3CB4177F3704BC91E">
+            <Directory Id="dir4311D903D70E55164A03E9E9374AC9B0" Name="flutter_assets" />
+        </DirectoryRef>
+    </Fragment>
+    <Fragment>
+        <DirectoryRef Id="dir4311D903D70E55164A03E9E9374AC9B0">
+            <Directory Id="dir44DE80E5FFD251532250E7F4BB7B2821" Name="assets" />
+        </DirectoryRef>
+    </Fragment>
+    <Fragment>
+        <DirectoryRef Id="dir4311D903D70E55164A03E9E9374AC9B0">
+            <Directory Id="dir5C01D37FD138B424B270832E735CB541" Name="shaders" />
+        </DirectoryRef>
+    </Fragment>
+    <Fragment>
+        <DirectoryRef Id="dirE3A5CD763BAF580FDB3696619F614D3F">
+            <Directory Id="dir5FF583AEA68E18714B78C24666F2A264" Name="cupertino_icons" />
+        </DirectoryRef>
+    </Fragment>
+    <Fragment>
+        <DirectoryRef Id="dir4311D903D70E55164A03E9E9374AC9B0">
+            <Directory Id="dirE2A82CA30E4E1381D520C8FF40996653" Name="fonts" />
+        </DirectoryRef>
+    </Fragment>
+    <Fragment>
+        <DirectoryRef Id="dir4311D903D70E55164A03E9E9374AC9B0">
+            <Directory Id="dirE3A5CD763BAF580FDB3696619F614D3F" Name="packages" />
+        </DirectoryRef>
+    </Fragment>
+    <Fragment>
+        <DirectoryRef Id="dir44DE80E5FFD251532250E7F4BB7B2821">
+            <Directory Id="dirE75FB312EAA247C0082F3701FE583C7B" Name="images" />
+        </DirectoryRef>
+    </Fragment>
+</Wix>

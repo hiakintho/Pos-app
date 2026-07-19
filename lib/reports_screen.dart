@@ -8,6 +8,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import 'models.dart';
+import 'notification_inbox_page.dart';
 
 class ReportsScreen extends StatefulWidget {
   final User user;
@@ -50,6 +51,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 icon: const Icon(Icons.menu),
               ),
         title: const Text('Reports'),
+        actions: [NotificationBellButton(user: widget.user)],
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance

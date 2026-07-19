@@ -2,9 +2,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import 'firebase_options.dart';
 import 'models.dart';
+import 'notification_inbox_page.dart';
 import 'pricing_settings_screen.dart';
 
 const List<_FeatureDefinition> _systemFeatures = [
@@ -14,8 +16,63 @@ const List<_FeatureDefinition> _systemFeatures = [
   _FeatureDefinition('add_product', 'Add Product', 'Create new products'),
   _FeatureDefinition('purchase_stock', 'Purchase Stock', 'Restock products'),
   _FeatureDefinition('expenses', 'Expenses', 'Manage business expenses'),
+  _FeatureDefinition(
+    'approve_expenses',
+    'Approve Expenses',
+    'Validate and approve business expenses',
+  ),
   _FeatureDefinition('purchases', 'Purchases', 'Manage supplier purchases'),
+  _FeatureDefinition(
+    'manage_purchase_orders',
+    'Manage Purchase Orders',
+    'Create and update purchase orders',
+  ),
+  _FeatureDefinition(
+    'approve_purchases',
+    'Approve Purchases',
+    'Approve supplier purchase orders',
+  ),
+  _FeatureDefinition(
+    'receive_goods',
+    'Receive Goods',
+    'Receive purchases and update inventory',
+  ),
+  _FeatureDefinition(
+    'verify_purchase_invoices',
+    'Verify Purchase Invoices',
+    'Validate supplier invoices',
+  ),
+  _FeatureDefinition(
+    'branch_purchase_reports',
+    'Branch Purchase Reports',
+    'View purchase reporting across branches',
+  ),
   _FeatureDefinition('sales_management', 'Sales', 'Manage sales records'),
+  _FeatureDefinition(
+    'online_sales',
+    'Online Sales',
+    'Manage marketplace orders and shipment tracking',
+  ),
+  _FeatureDefinition(
+    'manage_sales_transactions',
+    'Manage Sales Transactions',
+    'Edit sales, returns, delivery, and payment status',
+  ),
+  _FeatureDefinition(
+    'manage_discounts',
+    'Discount Management',
+    'Create and manage sales discounts',
+  ),
+  _FeatureDefinition(
+    'manage_price_groups',
+    'Price Group Management',
+    'Create and manage price groups',
+  ),
+  _FeatureDefinition(
+    'branch_sales_monitoring',
+    'Branch Sales Monitoring',
+    'View sales across business branches',
+  ),
   _FeatureDefinition('reports', 'Reports', 'View reports and analytics'),
   _FeatureDefinition('settings', 'Settings', 'Open administration settings'),
   _FeatureDefinition(
@@ -87,14 +144,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'add_product': false,
         'purchase_stock': false,
         'expenses': false,
+        'approve_expenses': false,
         'purchases': false,
+        'manage_purchase_orders': false,
+        'approve_purchases': false,
+        'receive_goods': false,
+        'verify_purchase_invoices': false,
+        'branch_purchase_reports': false,
         'sales_management': false,
+        'online_sales': false,
+        'manage_sales_transactions': false,
+        'manage_discounts': false,
+        'manage_price_groups': false,
+        'branch_sales_monitoring': false,
         'reports': false,
         'settings': false,
         'user_management': false,
         'role_management': false,
         'branch_management': false,
       },
+      'isSystemRole': true,
+    }, SetOptions(merge: true));
+
+    batch.set(_roleDocument(_businessId, UserRole.deliveryBoy), {
+      'roleId': UserRole.deliveryBoy,
+      'displayName': 'Delivery Boy',
+      'businessId': _businessId,
+      'permissions': {for (final feature in _systemFeatures) feature.id: false},
       'isSystemRole': true,
     }, SetOptions(merge: true));
 
@@ -117,6 +193,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: const Icon(Icons.menu),
               ),
         title: const Text('Settings & Administration'),
+        actions: [NotificationBellButton(user: widget.user)],
       ),
       body: ListView(
         padding: const EdgeInsets.all(12),
@@ -126,7 +203,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: const Text('Business Scope'),
             subtitle: Text('Business ID: $_businessId'),
           ),
+          _SubscriptionCountdownCard(businessId: _businessId),
           const Divider(),
+          if (isOwner)
+            _SettingsTile(
+              icon: Icons.payments,
+              title: 'Online Payment & Business',
+              subtitle: 'Set business name, Lipa number, and payment policy',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      OnlineBusinessSettingsPage(businessId: _businessId),
+                ),
+              ),
+            ),
           if (isOwner)
             _SettingsTile(
               icon: Icons.people,
@@ -223,6 +314,167 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
+class OnlineBusinessSettingsPage extends StatefulWidget {
+  final String businessId;
+  const OnlineBusinessSettingsPage({super.key, required this.businessId});
+
+  @override
+  State<OnlineBusinessSettingsPage> createState() =>
+      _OnlineBusinessSettingsPageState();
+}
+
+class _OnlineBusinessSettingsPageState
+    extends State<OnlineBusinessSettingsPage> {
+  final _businessName = TextEditingController();
+  final _lipaNumber = TextEditingController();
+  final _partialPercent = TextEditingController(text: '50');
+  final _shippingFee = TextEditingController(text: '0');
+  String _paymentTiming = 'before_order';
+  String _paymentAmount = 'full';
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    FirebaseFirestore.instance
+        .collection('businesses')
+        .doc(widget.businessId)
+        .get()
+        .then((doc) {
+          final data = doc.data() ?? const <String, dynamic>{};
+          _businessName.text = data['name'] as String? ?? '';
+          _lipaNumber.text = data['lipaNumber'] as String? ?? '';
+          _paymentTiming =
+              data['onlinePaymentTiming'] as String? ?? 'before_order';
+          _paymentAmount = data['onlinePaymentAmount'] as String? ?? 'full';
+          _partialPercent.text =
+              '${(data['onlinePartialPercent'] as num?) ?? 50}';
+          _shippingFee.text = '${(data['shippingFee'] as num?) ?? 0}';
+          if (mounted) setState(() => _loading = false);
+        });
+  }
+
+  @override
+  void dispose() {
+    _businessName.dispose();
+    _lipaNumber.dispose();
+    _partialPercent.dispose();
+    _shippingFee.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_businessName.text.trim().isEmpty || _lipaNumber.text.trim().isEmpty) {
+      return;
+    }
+    setState(() => _loading = true);
+    await FirebaseFirestore.instance
+        .collection('businesses')
+        .doc(widget.businessId)
+        .set({
+          'id': widget.businessId,
+          'name': _businessName.text.trim(),
+          'lipaNumber': _lipaNumber.text.trim(),
+          'onlinePaymentTiming': _paymentTiming,
+          'onlinePaymentAmount': _paymentAmount,
+          'onlinePartialPercent':
+              double.tryParse(_partialPercent.text.trim()) ?? 50,
+          'shippingFee': double.tryParse(_shippingFee.text.trim()) ?? 0,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+    if (mounted) {
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Online business settings saved.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Online Payment & Business')),
+    body: _loading
+        ? const Center(child: CircularProgressIndicator())
+        : ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              TextField(
+                controller: _businessName,
+                decoration: const InputDecoration(labelText: 'Business name'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _lipaNumber,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'Lipa number'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _shippingFee,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Shipping fee (optional)',
+                  prefixText: 'Tsh ',
+                  helperText: 'Use 0 for free shipping',
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Customer payment timing',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              RadioListTile(
+                value: 'before_order',
+                groupValue: _paymentTiming,
+                onChanged: (v) => setState(() => _paymentTiming = v!),
+                title: const Text('Before order is placed'),
+              ),
+              RadioListTile(
+                value: 'on_delivery',
+                groupValue: _paymentTiming,
+                onChanged: (v) => setState(() => _paymentTiming = v!),
+                title: const Text('On delivery'),
+              ),
+              Text(
+                'Required payment amount',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              RadioListTile(
+                value: 'full',
+                groupValue: _paymentAmount,
+                onChanged: (v) => setState(() => _paymentAmount = v!),
+                title: const Text('Full payment'),
+              ),
+              RadioListTile(
+                value: 'partial',
+                groupValue: _paymentAmount,
+                onChanged: (v) => setState(() => _paymentAmount = v!),
+                title: const Text('Partial payment'),
+              ),
+              if (_paymentAmount == 'partial') ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _partialPercent,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Partial payment percentage',
+                    suffixText: '%',
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _save,
+                icon: const Icon(Icons.save),
+                label: const Text('Save settings'),
+              ),
+            ],
+          ),
+  );
+}
+
 class UserManagementPage extends StatelessWidget {
   final User currentUser;
   final String businessId;
@@ -303,6 +555,41 @@ class UserManagementPage extends StatelessWidget {
     );
   }
 
+  Future<void> _deleteUser(BuildContext context, User user) async {
+    if (user.id == currentUser.id) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You cannot delete your own account.')),
+      );
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove user?'),
+        content: Text(
+          '${user.name} will immediately lose access to this application.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await FirebaseFirestore.instance.collection('users').doc(user.id).delete();
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('User access removed.')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<_RoleRecord>>(
@@ -356,11 +643,23 @@ class UserManagementPage extends StatelessWidget {
                         subtitle: Text(
                           '${roleName ?? user.role} | ${branchName ?? 'All branches'}',
                         ),
-                        trailing: IconButton(
-                          tooltip: 'Edit user',
-                          icon: const Icon(Icons.edit),
-                          onPressed: () =>
-                              _openEditUser(context, user, roles, branches),
+                        trailing: Wrap(
+                          spacing: 2,
+                          children: [
+                            IconButton(
+                              tooltip: 'Edit user',
+                              icon: const Icon(Icons.edit),
+                              onPressed: () =>
+                                  _openEditUser(context, user, roles, branches),
+                            ),
+                            IconButton(
+                              tooltip: 'Remove user',
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: user.id == currentUser.id
+                                  ? null
+                                  : () => _deleteUser(context, user),
+                            ),
+                          ],
                         ),
                       );
                     },
@@ -460,6 +759,14 @@ class _RoleManagementPageState extends State<RoleManagementPage> {
                           role.permissions,
                         );
                         updated[feature.id] = value;
+                        for (final operation in const [
+                          'create',
+                          'read',
+                          'update',
+                          'delete',
+                        ]) {
+                          updated['${feature.id}.$operation'] = value;
+                        }
                         await FirebaseFirestore.instance
                             .collection('roles')
                             .doc(role.docId)
@@ -877,7 +1184,9 @@ class _RoleEditorSheet extends StatefulWidget {
 class _RoleEditorSheetState extends State<_RoleEditorSheet> {
   final _nameController = TextEditingController();
   late Map<String, bool> _permissions;
+  late Map<String, Map<String, bool>> _crudPermissions;
   bool _isSaving = false;
+  static const _operations = ['create', 'read', 'update', 'delete'];
 
   @override
   void initState() {
@@ -886,6 +1195,16 @@ class _RoleEditorSheetState extends State<_RoleEditorSheet> {
     _permissions = {
       for (final feature in _systemFeatures)
         feature.id: widget.role?.permissions[feature.id] ?? false,
+    };
+    _crudPermissions = {
+      for (final feature in _systemFeatures)
+        feature.id: {
+          for (final operation in _operations)
+            operation:
+                widget.role?.permissions['${feature.id}.$operation'] ??
+                widget.role?.permissions[feature.id] ??
+                false,
+        },
     };
   }
 
@@ -904,6 +1223,14 @@ class _RoleEditorSheetState extends State<_RoleEditorSheet> {
     final roleId = widget.role?.roleId ?? _slug(name);
     final docId = widget.role?.docId ?? _roleDocId(widget.businessId, roleId);
 
+    for (final feature in _systemFeatures) {
+      final access = _crudPermissions[feature.id]!;
+      _permissions[feature.id] = access.values.any((allowed) => allowed);
+      for (final operation in _operations) {
+        _permissions['${feature.id}.$operation'] = access[operation] == true;
+      }
+    }
+
     await firestore.collection('roles').doc(docId).set({
       'roleId': roleId,
       'displayName': name,
@@ -919,6 +1246,10 @@ class _RoleEditorSheetState extends State<_RoleEditorSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final groups = <String, List<_FeatureDefinition>>{};
+    for (final feature in _systemFeatures) {
+      groups.putIfAbsent(_featureGroup(feature.id), () => []).add(feature);
+    }
     return _SheetScaffold(
       title: widget.role == null ? 'Create Role' : 'Edit Role',
       isSaving: _isSaving,
@@ -933,17 +1264,91 @@ class _RoleEditorSheetState extends State<_RoleEditorSheet> {
             ),
           ),
           const SizedBox(height: 12),
-          ..._systemFeatures.map((feature) {
-            return SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(feature.name),
-              subtitle: Text(feature.description),
-              value: _permissions[feature.id] == true,
-              onChanged: _isSaving
-                  ? null
-                  : (value) => setState(() => _permissions[feature.id] = value),
-            );
-          }),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Feature access by CRUD operation',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...groups.entries.map(
+            (group) => Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: ExpansionTile(
+                initiallyExpanded: group.key == 'Sales & Orders',
+                leading: Icon(_featureGroupIcon(group.key)),
+                title: Text(group.key),
+                subtitle: Text('${group.value.length} features'),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: _operations.map((operation) {
+                        final allAllowed = group.value.every(
+                          (feature) =>
+                              _crudPermissions[feature.id]![operation] == true,
+                        );
+                        return FilterChip(
+                          selected: allAllowed,
+                          label: Text('All ${_operationLabel(operation)}'),
+                          onSelected: _isSaving
+                              ? null
+                              : (value) => setState(() {
+                                  for (final feature in group.value) {
+                                    _crudPermissions[feature.id]![operation] =
+                                        value;
+                                  }
+                                }),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ...group.value.map(
+                    (feature) => Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            feature.name,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          Text(
+                            feature.description,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            children: _operations.map((operation) {
+                              return FilterChip(
+                                selected:
+                                    _crudPermissions[feature.id]![operation] ==
+                                    true,
+                                label: Text(_operationLabel(operation)),
+                                onSelected: _isSaving
+                                    ? null
+                                    : (value) => setState(
+                                        () =>
+                                            _crudPermissions[feature
+                                                    .id]![operation] =
+                                                value,
+                                      ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
@@ -975,6 +1380,25 @@ class _BranchEditorSheetState extends State<_BranchEditorSheet> {
   final _addressController = TextEditingController();
   final _phoneController = TextEditingController();
   bool _isSaving = false;
+  GeoPoint? _location;
+
+  Future<void> _pinGps() async {
+    if (!await Geolocator.isLocationServiceEnabled()) return;
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission != LocationPermission.always &&
+        permission != LocationPermission.whileInUse) {
+      return;
+    }
+    final position = await Geolocator.getCurrentPosition();
+    if (mounted) {
+      setState(
+        () => _location = GeoPoint(position.latitude, position.longitude),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -1009,6 +1433,7 @@ class _BranchEditorSheetState extends State<_BranchEditorSheet> {
       'address': _addressController.text.trim(),
       'phone': _phoneController.text.trim(),
       'managerId': widget.branch?.managerId ?? '',
+      if (_location != null) 'location': _location,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
@@ -1027,6 +1452,19 @@ class _BranchEditorSheetState extends State<_BranchEditorSheet> {
           _textField(_nameController, 'Branch name'),
           const SizedBox(height: 12),
           _textField(_addressController, 'Address', required: false),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _isSaving ? null : _pinGps,
+              icon: const Icon(Icons.pin_drop),
+              label: Text(
+                _location == null
+                    ? 'Pin optional GPS location'
+                    : 'GPS location pinned',
+              ),
+            ),
+          ),
           const SizedBox(height: 12),
           _textField(_phoneController, 'Phone', required: false),
           const SizedBox(height: 16),
@@ -1043,6 +1481,41 @@ class _BranchEditorSheetState extends State<_BranchEditorSheet> {
       ),
     );
   }
+}
+
+class _SubscriptionCountdownCard extends StatelessWidget {
+  final String businessId;
+  const _SubscriptionCountdownCard({required this.businessId});
+  @override
+  Widget build(BuildContext context) =>
+      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('businesses')
+            .doc(businessId)
+            .snapshots(),
+        builder: (context, snapshot) {
+          final value = snapshot.data?.data()?['subscriptionExpiresAt'];
+          if (value is! Timestamp) return const SizedBox.shrink();
+          final expiry = value.toDate();
+          final days = expiry.difference(DateTime.now()).inDays + 1;
+          return Card(
+            child: ListTile(
+              leading: Icon(
+                days <= 7 ? Icons.warning_amber : Icons.event_available,
+                color: days <= 7 ? Colors.orange : null,
+              ),
+              title: Text(
+                days > 0
+                    ? '$days subscription days remaining'
+                    : 'Subscription expired',
+              ),
+              subtitle: Text(
+                'Expires ${expiry.day}/${expiry.month}/${expiry.year}',
+              ),
+            ),
+          );
+        },
+      );
 }
 
 class _SettingsTile extends StatelessWidget {
@@ -1132,6 +1605,60 @@ class _FeatureDefinition {
     'description': description,
   };
 }
+
+String _operationLabel(String operation) => switch (operation) {
+  'create' => 'Create',
+  'read' => 'Read',
+  'update' => 'Update',
+  'delete' => 'Delete',
+  _ => operation,
+};
+
+String _featureGroup(String featureId) {
+  if ({
+    'dashboard',
+    'reports',
+    'branch_purchase_reports',
+    'branch_sales_monitoring',
+  }.contains(featureId)) {
+    return 'Dashboard & Reports';
+  }
+  if ({
+    'pos',
+    'sales_management',
+    'online_sales',
+    'manage_sales_transactions',
+    'manage_discounts',
+    'manage_price_groups',
+  }.contains(featureId)) {
+    return 'Sales & Orders';
+  }
+  if ({'inventory', 'add_product', 'purchase_stock'}.contains(featureId)) {
+    return 'Products & Inventory';
+  }
+  if ({
+    'purchases',
+    'manage_purchase_orders',
+    'approve_purchases',
+    'receive_goods',
+    'verify_purchase_invoices',
+  }.contains(featureId)) {
+    return 'Purchases & Suppliers';
+  }
+  if ({'expenses', 'approve_expenses'}.contains(featureId)) {
+    return 'Expenses & Finance';
+  }
+  return 'Administration';
+}
+
+IconData _featureGroupIcon(String group) => switch (group) {
+  'Dashboard & Reports' => Icons.analytics,
+  'Sales & Orders' => Icons.shopping_bag,
+  'Products & Inventory' => Icons.inventory_2,
+  'Purchases & Suppliers' => Icons.local_shipping,
+  'Expenses & Finance' => Icons.account_balance_wallet,
+  _ => Icons.admin_panel_settings,
+};
 
 class _RoleRecord {
   final String docId;

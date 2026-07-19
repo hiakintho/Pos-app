@@ -33,6 +33,18 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Local tools and dependency caches
+/.tools/
+/functions/node_modules/
+
+# Generated installers and packaging outputs
+/dist/
+/installer/obj/
+/installer/*.exe
+/installer/*.msi
+/installer/*.zip
+/installer/*.wixpdb
+
 # Symbolication related
 app.*.symbols
 

@@ -30,7 +30,7 @@ class DatabaseHelper {
 
       return await openDatabase(
         path,
-        version: 2,
+        version: 6,
         onCreate: _createDB,
         onUpgrade: _upgradeDB,
       );
@@ -47,9 +47,29 @@ class DatabaseHelper {
         name TEXT NOT NULL,
         barcode TEXT NOT NULL,
         price REAL NOT NULL,
+        productCost REAL DEFAULT 0,
         stockQuantity REAL NOT NULL,
         category TEXT NOT NULL,
+        priceGroupId TEXT,
+        brandName TEXT,
+        unitOfMeasurement TEXT,
+        supplierId TEXT,
+        supplierName TEXT,
+        taxRuleId TEXT,
+        branchId TEXT,
+        businessId TEXT,
+        batchNumber TEXT,
         expiryDate TEXT,
+        manufacturingDate TEXT,
+        description TEXT,
+        isAvailableOnline INTEGER DEFAULT 0,
+        shopName TEXT,
+        lipaNumber TEXT,
+        imageUrls TEXT,
+        freeShipping INTEGER DEFAULT 1,
+        shippingFee REAL DEFAULT 0,
+        paymentTiming TEXT,
+        paymentAmountPolicy TEXT,
         isSynced INTEGER DEFAULT 0
       )
     ''');
@@ -94,17 +114,77 @@ class DatabaseHelper {
       await addColumn('customerName', 'TEXT');
       await addColumn('status', "TEXT DEFAULT 'completed'");
     }
+    if (oldVersion < 3) {
+      final columns = await db.rawQuery('PRAGMA table_info(products)');
+      final existing = columns.map((column) => column['name']).toSet();
+
+      Future<void> addProductColumn(String name, String definition) async {
+        if (!existing.contains(name)) {
+          await db.execute('ALTER TABLE products ADD COLUMN $name $definition');
+        }
+      }
+
+      await addProductColumn('productCost', 'REAL DEFAULT 0');
+      await addProductColumn('priceGroupId', 'TEXT');
+      await addProductColumn('brandName', 'TEXT');
+      await addProductColumn('unitOfMeasurement', 'TEXT');
+      await addProductColumn('supplierId', 'TEXT');
+      await addProductColumn('supplierName', 'TEXT');
+      await addProductColumn('taxRuleId', 'TEXT');
+      await addProductColumn('branchId', 'TEXT');
+      await addProductColumn('businessId', 'TEXT');
+      await addProductColumn('batchNumber', 'TEXT');
+      await addProductColumn('manufacturingDate', 'TEXT');
+      await addProductColumn('description', 'TEXT');
+    }
+    if (oldVersion < 4) {
+      final columns = await db.rawQuery('PRAGMA table_info(products)');
+      final existing = columns.map((column) => column['name']).toSet();
+      if (!existing.contains('isAvailableOnline')) {
+        await db.execute(
+          'ALTER TABLE products ADD COLUMN isAvailableOnline INTEGER DEFAULT 0',
+        );
+      }
+      if (!existing.contains('shopName')) {
+        await db.execute('ALTER TABLE products ADD COLUMN shopName TEXT');
+      }
+    }
+    if (oldVersion < 5) {
+      final columns = await db.rawQuery('PRAGMA table_info(products)');
+      final existing = columns.map((column) => column['name']).toSet();
+      if (!existing.contains('lipaNumber')) {
+        await db.execute('ALTER TABLE products ADD COLUMN lipaNumber TEXT');
+      }
+      if (!existing.contains('imageUrls')) {
+        await db.execute('ALTER TABLE products ADD COLUMN imageUrls TEXT');
+      }
+    }
+    if (oldVersion < 6) {
+      final columns = await db.rawQuery('PRAGMA table_info(products)');
+      final existing = columns.map((column) => column['name']).toSet();
+      for (final entry in {
+        'freeShipping': 'INTEGER DEFAULT 1',
+        'shippingFee': 'REAL DEFAULT 0',
+        'paymentTiming': 'TEXT',
+        'paymentAmountPolicy': 'TEXT',
+      }.entries) {
+        if (!existing.contains(entry.key)) {
+          await db.execute(
+            'ALTER TABLE products ADD COLUMN ${entry.key} ${entry.value}',
+          );
+        }
+      }
+    }
   }
 
   // Product Operations
   Future<void> insertProduct(Product product) async {
     try {
       final db = await instance.database;
-      await db.insert(
-        'products',
-        product.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await db.insert('products', {
+        ...product.toMap(),
+        'isAvailableOnline': product.isAvailableOnline ? 1 : 0,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     } catch (_) {
       _memoryProducts[product.id] = product;
     }

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product
+    Id="*"
+    Name="POS APP"
+    Language="1033"
+    Version="1.0.0.0"
+    Manufacturer="POS APP"
+    UpgradeCode="7F7F1E32-55D6-4A02-84FB-6FBC9C8F9A2B">
+
+    <Package
+      InstallerVersion="500"
+      Compressed="yes"
+      InstallScope="perMachine"
+      Platform="x64" />
+
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of POS APP is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.InstallerDir)\license.rtf" />
+    <UIRef Id="WixUI_InstallDir" />
+    <UIRef Id="WixUI_ErrorProgressText" />
+
+    <Feature Id="ProductFeature" Title="POS APP" Level="1">
+      <ComponentGroupRef Id="ReleaseFiles" />
+      <ComponentRef Id="ApplicationShortcuts" />
+    </Feature>
+  </Product>
+
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="POS APP" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="POS APP" />
+      </Directory>
+      <Directory Id="DesktopFolder" />
+    </Directory>
+  </Fragment>
+
+  <Fragment>
+    <Component
+      Id="ApplicationShortcuts"
+      Directory="ApplicationProgramsFolder"
+      Guid="E14C953A-F443-43D4-941B-6582F4978D1E">
+      <Shortcut
+        Id="ApplicationStartMenuShortcut"
+        Name="POS APP"
+        Description="Launch POS APP"
+        Target="[INSTALLFOLDER]point_of_sale.exe"
+        WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut
+        Id="ApplicationDesktopShortcut"
+        Directory="DesktopFolder"
+        Name="POS APP"
+        Description="Launch POS APP"
+        Target="[INSTALLFOLDER]point_of_sale.exe"
+        WorkingDirectory="INSTALLFOLDER" />
+      <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+      <RegistryValue
+        Root="HKLM"
+        Key="Software\POS APP"
+        Name="installed"
+        Type="integer"
+        Value="1"
+        KeyPath="yes" />
+    </Component>
+  </Fragment>
+</Wix>

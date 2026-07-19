@@ -1,10 +1,13 @@
 import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import 'models.dart';
+import 'notification_inbox_page.dart';
 
 class DashboardScreen extends StatelessWidget {
   final User user;
@@ -23,6 +26,7 @@ class DashboardScreen extends StatelessWidget {
                 icon: const Icon(Icons.menu),
               ),
         title: const Text('Dashboard'),
+        actions: [NotificationBellButton(user: user)],
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance.collection('products').snapshots(),
@@ -88,8 +92,6 @@ class _DashboardContent extends StatelessWidget {
       symbol: 'Tsh ',
       decimalDigits: 0,
     );
-    final dateFormat = DateFormat('MMM d, HH:mm');
-
     return RefreshIndicator(
       onRefresh: () async {
         await FirebaseFirestore.instance.disableNetwork();
@@ -158,32 +160,58 @@ class _DashboardContent extends StatelessWidget {
               },
             ),
             const SizedBox(height: 20),
-            _SectionHeader(
-              title: 'Recent Sales',
-              trailing: '${data.recentSales.length} latest',
-            ),
-            const SizedBox(height: 8),
-            _RecentSalesCard(
-              sales: data.recentSales,
-              currencyFormat: currencyFormat,
-              dateFormat: dateFormat,
-            ),
-            const SizedBox(height: 20),
-            _SectionHeader(
-              title: 'Stock Watch',
-              trailing: '${data.lowStockProducts.length} low',
-            ),
-            const SizedBox(height: 8),
-            _LowStockCard(products: data.lowStockProducts),
-            const SizedBox(height: 20),
-            _SectionHeader(
-              title: 'Recent Purchases',
-              trailing: '${data.recentPurchases.length} latest',
-            ),
-            const SizedBox(height: 8),
-            _PurchaseCard(
-              purchases: data.recentPurchases,
-              dateFormat: dateFormat,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isDesktop = constraints.maxWidth >= 900;
+                final charts = [
+                  _PieChartCard(
+                    title: 'Payment Mix',
+                    subtitle: 'Cash, credit, and other payment totals',
+                    slices: data.paymentMix,
+                    emptyMessage: 'No sales payment data yet.',
+                  ),
+                  _BarChartCard(
+                    title: 'Sales Trend',
+                    subtitle: 'Daily sales value from recent transactions',
+                    bars: data.dailySales,
+                    valueFormat: currencyFormat,
+                    emptyMessage: 'No recent sales to chart.',
+                  ),
+                  _PieChartCard(
+                    title: 'Inventory Categories',
+                    subtitle: 'Products grouped by category',
+                    slices: data.categoryMix,
+                    emptyMessage: 'No products to chart.',
+                  ),
+                  _BarChartCard(
+                    title: 'Stock Purchases',
+                    subtitle: 'Quantity received by day',
+                    bars: data.purchaseTrend,
+                    emptyMessage: 'No purchase movement yet.',
+                  ),
+                ];
+
+                if (!isDesktop) {
+                  return Column(
+                    children: [
+                      for (final chart in charts) ...[
+                        chart,
+                        const SizedBox(height: 12),
+                      ],
+                    ],
+                  );
+                }
+
+                return GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 1.65,
+                  children: charts,
+                );
+              },
             ),
           ],
         ),
@@ -247,20 +275,118 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
+class _PieChartCard extends StatelessWidget {
   final String title;
-  final String trailing;
+  final String subtitle;
+  final List<_ChartValue> slices;
+  final String emptyMessage;
 
-  const _SectionHeader({required this.title, required this.trailing});
+  const _PieChartCard({
+    required this.title,
+    required this.subtitle,
+    required this.slices,
+    required this.emptyMessage,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    if (slices.isEmpty) return _EmptyCard(message: emptyMessage);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _ChartTitle(title: title, subtitle: subtitle),
+            const SizedBox(height: 12),
+            Expanded(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: CustomPaint(
+                      painter: _PieChartPainter(slices),
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(child: _ChartLegend(values: slices)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BarChartCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final List<_ChartValue> bars;
+  final NumberFormat? valueFormat;
+  final String emptyMessage;
+
+  const _BarChartCard({
+    required this.title,
+    required this.subtitle,
+    required this.bars,
+    this.valueFormat,
+    required this.emptyMessage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (bars.isEmpty) return _EmptyCard(message: emptyMessage);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _ChartTitle(title: title, subtitle: subtitle),
+            const SizedBox(height: 12),
+            Expanded(
+              child: CustomPaint(
+                painter: _BarChartPainter(bars),
+                child: const SizedBox.expand(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _chartRangeText(bars, valueFormat),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChartTitle extends StatelessWidget {
+  final String title;
+  final String subtitle;
+
+  const _ChartTitle({required this.title, required this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: Theme.of(context).textTheme.titleLarge),
-        const Spacer(),
+        Text(title, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 2),
         Text(
-          trailing,
+          subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -270,143 +396,166 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _RecentSalesCard extends StatelessWidget {
-  final List<_SaleSummary> sales;
-  final NumberFormat currencyFormat;
-  final DateFormat dateFormat;
+class _ChartLegend extends StatelessWidget {
+  final List<_ChartValue> values;
 
-  const _RecentSalesCard({
-    required this.sales,
-    required this.currencyFormat,
-    required this.dateFormat,
-  });
+  const _ChartLegend({required this.values});
 
   @override
   Widget build(BuildContext context) {
-    if (sales.isEmpty) {
-      return const _EmptyCard(message: 'No Firebase sales yet.');
-    }
-
-    return Card(
-      child: ListView.separated(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: sales.length,
-        separatorBuilder: (_, _) => const Divider(height: 1),
-        itemBuilder: (context, index) {
-          final sale = sales[index];
-          return ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.receipt_long)),
-            title: Text(
-              sale.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Text(
-              '${sale.paymentMethod} | ${dateFormat.format(sale.date)}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: Text(
-              currencyFormat.format(sale.total),
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _LowStockCard extends StatelessWidget {
-  final List<Product> products;
-
-  const _LowStockCard({required this.products});
-
-  @override
-  Widget build(BuildContext context) {
-    if (products.isEmpty) {
-      return const _EmptyCard(message: 'No low stock products.');
-    }
-
-    return Card(
-      child: ListView.separated(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: products.length,
-        separatorBuilder: (_, _) => const Divider(height: 1),
-        itemBuilder: (context, index) {
-          final product = products[index];
-          return ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              child: const Icon(Icons.warning, color: Colors.white),
-            ),
-            title: Text(
-              product.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Text(
-              product.category,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: Text(
-              product.stockQuantity.toStringAsFixed(0),
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.error,
+    final total = values.fold<double>(0, (amount, item) {
+      return amount + item.value;
+    });
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: values.take(5).map((item) {
+        final percent = total == 0 ? 0 : item.value / total * 100;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: item.color,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-          );
-        },
-      ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  item.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text('${percent.toStringAsFixed(0)}%'),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 }
 
-class _PurchaseCard extends StatelessWidget {
-  final List<_PurchaseSummary> purchases;
-  final DateFormat dateFormat;
+class _PieChartPainter extends CustomPainter {
+  final List<_ChartValue> values;
 
-  const _PurchaseCard({required this.purchases, required this.dateFormat});
+  const _PieChartPainter(this.values);
 
   @override
-  Widget build(BuildContext context) {
-    if (purchases.isEmpty) {
-      return const _EmptyCard(message: 'No stock purchases yet.');
+  void paint(Canvas canvas, Size size) {
+    final total = values.fold<double>(0, (amount, item) {
+      return amount + item.value;
+    });
+    if (total <= 0) return;
+
+    final shortest = math.min(size.width, size.height);
+    final rect = Rect.fromCenter(
+      center: Offset(size.width / 2, size.height / 2),
+      width: shortest,
+      height: shortest,
+    ).deflate(8);
+    final paint = Paint()..style = PaintingStyle.stroke;
+    paint.strokeWidth = math.max(18, shortest * 0.18);
+    paint.strokeCap = StrokeCap.butt;
+
+    var start = -math.pi / 2;
+    for (final value in values) {
+      final sweep = value.value / total * math.pi * 2;
+      paint.color = value.color;
+      canvas.drawArc(rect, start, sweep, false, paint);
+      start += sweep;
     }
 
-    return Card(
-      child: ListView.separated(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: purchases.length,
-        separatorBuilder: (_, _) => const Divider(height: 1),
-        itemBuilder: (context, index) {
-          final purchase = purchases[index];
-          return ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.add_shopping_cart)),
-            title: Text(
-              purchase.productName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Text(
-              dateFormat.format(purchase.date),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: Text(
-              '+${purchase.quantity.toStringAsFixed(0)}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          );
-        },
-      ),
-    );
+    final holePaint = Paint()..color = const Color(0xFF181818);
+    canvas.drawCircle(rect.center, rect.width * 0.24, holePaint);
   }
+
+  @override
+  bool shouldRepaint(covariant _PieChartPainter oldDelegate) {
+    return oldDelegate.values != values;
+  }
+}
+
+class _BarChartPainter extends CustomPainter {
+  final List<_ChartValue> values;
+
+  const _BarChartPainter(this.values);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final maxValue = values.fold<double>(
+      0,
+      (current, item) => math.max(current, item.value),
+    );
+    if (maxValue <= 0) return;
+
+    final axisPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.12)
+      ..strokeWidth = 1;
+    final barPaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.bottomCenter,
+        end: Alignment.topCenter,
+        colors: [Color(0xFF1DB954), Color(0xFF4BE477)],
+      ).createShader(Offset.zero & size);
+
+    const bottomLabelSpace = 24.0;
+    final chartHeight = size.height - bottomLabelSpace;
+    final step = size.width / values.length;
+    final barWidth = math.min(44.0, step * 0.58);
+
+    canvas.drawLine(
+      Offset(0, chartHeight),
+      Offset(size.width, chartHeight),
+      axisPaint,
+    );
+
+    for (var i = 0; i < values.length; i++) {
+      final value = values[i];
+      final left = i * step + (step - barWidth) / 2;
+      final height = chartHeight * (value.value / maxValue);
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(left, chartHeight - height, barWidth, height),
+        const Radius.circular(5),
+      );
+      canvas.drawRRect(rect, barPaint);
+
+      final labelPainter = TextPainter(
+        text: TextSpan(
+          text: value.label,
+          style: const TextStyle(color: Color(0xFFB3B3B3), fontSize: 10),
+        ),
+        maxLines: 1,
+        textDirection: ui.TextDirection.ltr,
+      )..layout(maxWidth: step);
+      labelPainter.paint(
+        canvas,
+        Offset(i * step + (step - labelPainter.width) / 2, chartHeight + 6),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BarChartPainter oldDelegate) {
+    return oldDelegate.values != values;
+  }
+}
+
+String _chartRangeText(List<_ChartValue> values, NumberFormat? format) {
+  final total = values.fold<double>(0, (amount, item) {
+    return amount + item.value;
+  });
+  final top = values.reduce((a, b) => a.value >= b.value ? a : b);
+  final totalText = format == null
+      ? total.toStringAsFixed(0)
+      : format.format(total);
+  final topText = format == null
+      ? top.value.toStringAsFixed(0)
+      : format.format(top.value);
+  return 'Total $totalText | Highest ${top.label}: $topText';
 }
 
 class _EmptyCard extends StatelessWidget {
@@ -430,6 +579,10 @@ class _DashboardData {
   final List<Product> lowStockProducts;
   final List<_SaleSummary> recentSales;
   final List<_PurchaseSummary> recentPurchases;
+  final List<_ChartValue> paymentMix;
+  final List<_ChartValue> categoryMix;
+  final List<_ChartValue> dailySales;
+  final List<_ChartValue> purchaseTrend;
 
   const _DashboardData({
     required this.productCount,
@@ -439,6 +592,10 @@ class _DashboardData {
     required this.lowStockProducts,
     required this.recentSales,
     required this.recentPurchases,
+    required this.paymentMix,
+    required this.categoryMix,
+    required this.dailySales,
+    required this.purchaseTrend,
   });
 
   factory _DashboardData.fromSnapshots(
@@ -479,10 +636,29 @@ class _DashboardData {
           ..sort((a, b) => a.stockQuantity.compareTo(b.stockQuantity));
 
     final recentSales = scopedSaleDocs.map(_SaleSummary.fromDoc).toList();
+    final recentPurchases = scopedPurchaseDocs
+        .map(_PurchaseSummary.fromDoc)
+        .toList();
     final salesTotal = recentSales.fold<double>(
       0,
       (total, sale) => total + sale.total,
     );
+    final categoryCounts = <String, double>{};
+    for (final product in products) {
+      final category = product.category.trim().isEmpty
+          ? 'General'
+          : product.category.trim();
+      categoryCounts.update(category, (value) => value + 1, ifAbsent: () => 1);
+    }
+
+    final paymentTotals = <String, double>{};
+    for (final sale in recentSales) {
+      paymentTotals.update(
+        sale.paymentMethod,
+        (value) => value + sale.total,
+        ifAbsent: () => sale.total,
+      );
+    }
 
     return _DashboardData(
       productCount: products.length,
@@ -491,12 +667,25 @@ class _DashboardData {
       salesTotal: salesTotal,
       lowStockProducts: lowStockProducts.take(6).toList(),
       recentSales: recentSales.take(6).toList(),
-      recentPurchases: scopedPurchaseDocs
-          .map(_PurchaseSummary.fromDoc)
-          .take(6)
-          .toList(),
+      recentPurchases: recentPurchases.take(6).toList(),
+      paymentMix: _chartValuesFromMap(paymentTotals),
+      categoryMix: _chartValuesFromMap(categoryCounts),
+      dailySales: _dailySalesChart(recentSales),
+      purchaseTrend: _dailyPurchaseChart(recentPurchases),
     );
   }
+}
+
+class _ChartValue {
+  final String label;
+  final double value;
+  final Color color;
+
+  const _ChartValue({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 }
 
 class _SaleSummary {
@@ -575,6 +764,77 @@ class _PurchaseSummary {
       date: _dateFromValue(data['createdAt']),
     );
   }
+}
+
+const List<Color> _chartColors = [
+  Color(0xFF1DB954),
+  Color(0xFF4CB3FF),
+  Color(0xFFFFC857),
+  Color(0xFFFF6B6B),
+  Color(0xFFB388FF),
+  Color(0xFF4ECDC4),
+  Color(0xFFFF8A3D),
+];
+
+List<_ChartValue> _chartValuesFromMap(Map<String, double> values) {
+  final entries = values.entries.where((entry) => entry.value > 0).toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+
+  return [
+    for (var i = 0; i < entries.length; i++)
+      _ChartValue(
+        label: entries[i].key,
+        value: entries[i].value,
+        color: _chartColors[i % _chartColors.length],
+      ),
+  ];
+}
+
+List<_ChartValue> _dailySalesChart(List<_SaleSummary> sales) {
+  final totals = <DateTime, double>{};
+  for (final sale in sales) {
+    final day = DateTime(sale.date.year, sale.date.month, sale.date.day);
+    totals.update(
+      day,
+      (value) => value + sale.total,
+      ifAbsent: () => sale.total,
+    );
+  }
+  return _dailyChartValues(totals);
+}
+
+List<_ChartValue> _dailyPurchaseChart(List<_PurchaseSummary> purchases) {
+  final totals = <DateTime, double>{};
+  for (final purchase in purchases) {
+    final day = DateTime(
+      purchase.date.year,
+      purchase.date.month,
+      purchase.date.day,
+    );
+    totals.update(
+      day,
+      (value) => value + purchase.quantity,
+      ifAbsent: () => purchase.quantity,
+    );
+  }
+  return _dailyChartValues(totals);
+}
+
+List<_ChartValue> _dailyChartValues(Map<DateTime, double> values) {
+  final entries = values.entries.toList()
+    ..sort((a, b) => a.key.compareTo(b.key));
+  final latest = entries.length > 7
+      ? entries.sublist(entries.length - 7)
+      : entries;
+  final labelFormat = DateFormat('d MMM');
+  return [
+    for (var i = 0; i < latest.length; i++)
+      _ChartValue(
+        label: labelFormat.format(latest[i].key),
+        value: latest[i].value,
+        color: _chartColors[i % _chartColors.length],
+      ),
+  ];
 }
 
 DateTime _dateFromValue(dynamic value) {
