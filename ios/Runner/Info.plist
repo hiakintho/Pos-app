@@ -4,6 +4,10 @@
 <dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Your location is used for delivery addresses and live delivery tracking.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Microphone access is used to search products and customers by voice.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Speech recognition is used to turn spoken product and customer searches into text.</string>
 		<key>CADisableMinimumFrameDurationOnPhone</key>
 		<true/>
 		<key>CFBundleDevelopmentRegion</key>

@@ -3,57 +3,119 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import 'models.dart';
 import 'notification_inbox_page.dart';
+import 'accounting_ledger.dart';
+import 'business_finance.dart';
+import 'payroll_screen.dart';
 
 class BusinessManagementScreen extends StatelessWidget {
   final User user;
   final VoidCallback? onOpenMenu;
+  final Map<String, bool>? permissions;
   const BusinessManagementScreen({
     super.key,
     required this.user,
     this.onOpenMenu,
+    this.permissions,
   });
 
   @override
-  Widget build(BuildContext context) => DefaultTabController(
-    length: 5,
-    child: Scaffold(
-      appBar: AppBar(
-        leading: onOpenMenu == null
-            ? null
-            : IconButton(onPressed: onOpenMenu, icon: const Icon(Icons.menu)),
-        title: const Text('Business Management'),
-        actions: [NotificationBellButton(user: user)],
-        bottom: const TabBar(
-          isScrollable: true,
-          tabs: [
-            Tab(icon: Icon(Icons.account_balance), text: 'Accounting'),
-            Tab(icon: Icon(Icons.wallet), text: 'Accounts'),
-            Tab(icon: Icon(Icons.badge), text: 'Employees'),
-            Tab(icon: Icon(Icons.precision_manufacturing), text: 'Assets'),
-            Tab(icon: Icon(Icons.swap_horiz), text: 'Stock Transfers'),
-          ],
+  Widget build(BuildContext context) {
+    bool can(String id) =>
+        user.role == UserRole.superAdmin ||
+        permissions == null ||
+        permissions![id] == true;
+    final tabs = <({Tab tab, Widget page})>[
+      if (can('accounting'))
+        (
+          tab: const Tab(icon: Icon(Icons.account_balance), text: 'Accounting'),
+          page: AccountingLedger(user: user),
         ),
+      if (can('financial_accounts'))
+        (
+          tab: const Tab(icon: Icon(Icons.wallet), text: 'Accounts'),
+          page: _AccountsTab(user: user),
+        ),
+      if (can('payroll'))
+        (
+          tab: const Tab(icon: Icon(Icons.badge), text: 'Payroll'),
+          page: PayrollPanel(user: user),
+        ),
+      if (can('asset_management'))
+        (
+          tab: const Tab(
+            icon: Icon(Icons.precision_manufacturing),
+            text: 'Assets',
+          ),
+          page: _AssetsTab(user: user),
+        ),
+    ];
+    if (tabs.isEmpty) {
+      return const Scaffold(
+        body: Center(child: Text('No business management features assigned.')),
+      );
+    }
+    return DefaultTabController(
+      length: tabs.length,
+      child: Scaffold(
+        appBar: AppBar(
+          leading: onOpenMenu == null
+              ? null
+              : IconButton(onPressed: onOpenMenu, icon: const Icon(Icons.menu)),
+          title: const Text('Business Management'),
+          actions: [NotificationBellButton(user: user)],
+          bottom: TabBar(
+            isScrollable: true,
+            tabs: tabs.map((item) => item.tab).toList(),
+          ),
+        ),
+        body: TabBarView(children: tabs.map((item) => item.page).toList()),
       ),
-      body: TabBarView(
-        children: [
-          _AccountingTab(user: user),
-          _AccountsTab(user: user),
-          _EmployeesTab(user: user),
-          _AssetsTab(user: user),
-          _TransfersTab(user: user),
-        ],
-      ),
+    );
+  }
+}
+
+class StockTransfersScreen extends StatelessWidget {
+  final User user;
+  final VoidCallback? onOpenMenu;
+
+  const StockTransfersScreen({super.key, required this.user, this.onOpenMenu});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      leading: onOpenMenu == null
+          ? null
+          : IconButton(onPressed: onOpenMenu, icon: const Icon(Icons.menu)),
+      title: const Text('Stock Transfers'),
+      actions: [NotificationBellButton(user: user)],
     ),
+    body: _TransfersTab(user: user),
   );
 }
 
 String _businessId(User user) => user.businessId ?? 'default_business';
 double _number(dynamic value) => (value as num?)?.toDouble() ?? 0;
+double _assetAccumulatedDepreciation(Map<String, dynamic> data) {
+  final cost = _number(data['purchaseCost'] ?? data['value']);
+  final rate = _number(data['depreciationRate']);
+  final purchased = DateTime.tryParse(data['purchaseDate']?.toString() ?? '');
+  if (cost <= 0 || rate <= 0 || purchased == null) return 0;
+  final years = DateTime.now().difference(purchased).inDays / 365.25;
+  return (cost * rate / 100 * years).clamp(0, cost).toDouble();
+}
+
+double _assetBookValue(Map<String, dynamic> data) {
+  final cost = _number(data['purchaseCost'] ?? data['value']);
+  if (_number(data['depreciationRate']) <= 0) return _number(data['value']);
+  return (cost - _assetAccumulatedDepreciation(data)).clamp(0, cost).toDouble();
+}
+
 DateTime _date(dynamic value) => value is Timestamp
     ? value.toDate()
     : DateTime.tryParse(value?.toString() ?? '') ?? DateTime.now();
@@ -79,6 +141,8 @@ Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _businessDocs(
   return docs;
 });
 
+// Kept only to read legacy manually entered records during migration.
+// ignore: unused_element
 class _AccountingTab extends StatelessWidget {
   final User user;
   const _AccountingTab({required this.user});
@@ -104,7 +168,7 @@ class _AccountingTab extends StatelessWidget {
     stream: _businessDocs('accounting_entries', user),
     builder: (context, snapshot) {
       if (!snapshot.hasData) {
-        return const Center(child: CircularProgressIndicator());
+        return const Center(child: ModernLoadingIndicator());
       }
       final entries = snapshot.data!;
       final income = entries
@@ -278,15 +342,68 @@ class _AccountsTab extends StatelessWidget {
       ),
     );
     if (result == null) return;
+    final openingBalance = double.tryParse(result['values'][3]) ?? 0;
     await FirebaseFirestore.instance.collection('business_accounts').add({
       'businessId': _businessId(user),
       'type': result['type'],
       'name': result['values'][0],
       'provider': result['values'][1],
       'accountNumber': result['values'][2],
-      'openingBalance': double.tryParse(result['values'][3]) ?? 0,
+      'openingBalance': openingBalance,
+      'currentBalance': openingBalance,
       'createdAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  Future<void> _accountOperation(
+    BuildContext context,
+    String accountId,
+    String operation,
+  ) async {
+    if (operation == 'history') {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) => _AccountHistorySheet(
+          accountId: accountId,
+          businessId: _businessId(user),
+        ),
+      );
+      return;
+    }
+    final deposit = operation == 'capital_deposit';
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => _AccountOperationDialog(operation: operation),
+    );
+    if (result == null || !context.mounted) return;
+    try {
+      await recordBusinessAccountAdjustment(
+        accountId: accountId,
+        businessId: _businessId(user),
+        amount: result['amount'] as double,
+        transactionFee: result['fee'] as double,
+        deposit: deposit,
+        transactionType: operation,
+        reason: result['reason'] as String,
+        createdBy: user.id,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              deposit ? 'Capital deposited.' : 'Withdrawal recorded.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not update account: $e')));
+      }
+    }
   }
 
   @override
@@ -304,11 +421,226 @@ class _AccountsTab extends StatelessWidget {
       subtitle: Text(
         '${data['provider'] ?? ''} • ${data['accountNumber'] ?? ''}',
       ),
-      trailing: Text(_money.format(_number(data['openingBalance']))),
+      trailing: SizedBox(
+        width: 190,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Flexible(child: Text(_money.format(businessAccountBalance(data)))),
+            PopupMenuButton<String>(
+              tooltip: 'Account actions',
+              onSelected: (value) => _accountOperation(
+                context,
+                data['_documentId']?.toString() ?? '',
+                value,
+              ),
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'capital_deposit',
+                  child: Text('Deposit capital'),
+                ),
+                PopupMenuItem(
+                  value: 'profit_withdrawal',
+                  child: Text('Extract monthly profit'),
+                ),
+                PopupMenuItem(
+                  value: 'withdrawal',
+                  child: Text('Withdraw with reason'),
+                ),
+                PopupMenuItem(
+                  value: 'history',
+                  child: Text('View transaction history'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     ),
   );
 }
 
+class _AccountOperationDialog extends StatefulWidget {
+  final String operation;
+  const _AccountOperationDialog({required this.operation});
+
+  @override
+  State<_AccountOperationDialog> createState() =>
+      _AccountOperationDialogState();
+}
+
+class _AccountOperationDialogState extends State<_AccountOperationDialog> {
+  final amount = TextEditingController();
+  final fee = TextEditingController();
+  final reason = TextEditingController();
+
+  String get title => switch (widget.operation) {
+    'capital_deposit' => 'Deposit owner capital',
+    'profit_withdrawal' => 'Extract monthly profit',
+    _ => 'Withdraw from business account',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.operation == 'capital_deposit') {
+      reason.text = 'Owner capital deposit';
+    } else if (widget.operation == 'profit_withdrawal') {
+      reason.text =
+          'Profit extraction for ${DateFormat('MMMM yyyy').format(DateTime.now())}';
+    }
+  }
+
+  @override
+  void dispose() {
+    amount.dispose();
+    fee.dispose();
+    reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(title),
+    content: SizedBox(
+      width: 440,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: amount,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Amount',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: fee,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Bank/transaction fee (optional)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: reason,
+            maxLines: 2,
+            decoration: const InputDecoration(
+              labelText: 'Reason',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: () {
+          final value = double.tryParse(amount.text.trim());
+          final feeValue = double.tryParse(fee.text.trim()) ?? 0;
+          if (value == null ||
+              value <= 0 ||
+              feeValue < 0 ||
+              reason.text.trim().isEmpty) {
+            return;
+          }
+          Navigator.pop(context, {
+            'amount': value,
+            'fee': feeValue,
+            'reason': reason.text.trim(),
+          });
+        },
+        child: const Text('Confirm'),
+      ),
+    ],
+  );
+}
+
+class _AccountHistorySheet extends StatelessWidget {
+  final String accountId;
+  final String businessId;
+  const _AccountHistorySheet({
+    required this.accountId,
+    required this.businessId,
+  });
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: SizedBox(
+      height: MediaQuery.sizeOf(context).height * .75,
+      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('account_transactions')
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: ModernLoadingIndicator());
+          }
+          final transactions =
+              snapshot.data!.docs.where((doc) {
+                final data = doc.data();
+                return data['businessId'] == businessId &&
+                    data['accountId'] == accountId;
+              }).toList()..sort(
+                (a, b) => _date(
+                  b.data()['createdAt'],
+                ).compareTo(_date(a.data()['createdAt'])),
+              );
+          return Column(
+            children: [
+              ListTile(
+                title: const Text('Account transaction history'),
+                trailing: IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: transactions.isEmpty
+                    ? const Center(child: Text('No account transactions yet.'))
+                    : ListView.builder(
+                        itemCount: transactions.length,
+                        itemBuilder: (context, index) {
+                          final data = transactions[index].data();
+                          final credit = data['direction'] == 'credit';
+                          return ListTile(
+                            leading: Icon(
+                              credit ? Icons.south_west : Icons.north_east,
+                              color: credit ? Colors.green : Colors.red,
+                            ),
+                            title: Text(data['description'] ?? 'Transaction'),
+                            subtitle: Text(
+                              '${data['transactionType'] ?? data['sourceType'] ?? 'payment'} • ${DateFormat.yMMMd().add_Hm().format(_date(data['createdAt']))}${_number(data['transactionFee']) > 0 ? ' • Fee ${_money.format(_number(data['transactionFee']))}' : ''}',
+                            ),
+                            trailing: Text(
+                              '${credit ? '+' : '-'}${_money.format(_number(data['total']))}',
+                              style: TextStyle(
+                                color: credit ? Colors.green : Colors.red,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
+    ),
+  );
+}
+
+// Legacy employee list retained for data compatibility; PayrollPanel is the UI.
+// ignore: unused_element
 class _EmployeesTab extends StatelessWidget {
   final User user;
   const _EmployeesTab({required this.user});
@@ -373,7 +705,10 @@ class _AssetsTab extends StatelessWidget {
         fields: [
           'Asset name',
           'Category',
-          'Purchase/current value',
+          'Purchase cost',
+          'Current asset value',
+          'Annual depreciation rate (%)',
+          'Purchase date (YYYY-MM-DD)',
           'Serial number',
           'Branch ID/location',
         ],
@@ -394,9 +729,12 @@ class _AssetsTab extends StatelessWidget {
       'assetType': result['type'],
       'name': values[0],
       'category': values[1],
-      'value': double.tryParse(values[2]) ?? 0,
-      'serialNumber': values[3],
-      'branchId': values[4].isEmpty ? user.branchId ?? 'main' : values[4],
+      'purchaseCost': double.tryParse(values[2]) ?? 0,
+      'value': double.tryParse(values[3]) ?? double.tryParse(values[2]) ?? 0,
+      'depreciationRate': double.tryParse(values[4]) ?? 0,
+      'purchaseDate': values[5],
+      'serialNumber': values[6],
+      'branchId': values[7].isEmpty ? user.branchId ?? 'main' : values[7],
       'condition': 'good',
       'createdAt': FieldValue.serverTimestamp(),
     });
@@ -413,7 +751,8 @@ class _AssetsTab extends StatelessWidget {
       subtitle: Text(
         '${data['assetType'] ?? ''} • Branch ${data['branchId'] ?? 'main'} • ${data['condition'] ?? 'good'}',
       ),
-      trailing: Text(_money.format(_number(data['value']))),
+      isThreeLine: true,
+      trailing: Text(_money.format(_assetBookValue(data))),
     ),
   );
 }
@@ -433,8 +772,9 @@ class _RecordList extends StatelessWidget {
   Widget build(BuildContext context) => StreamBuilder(
     stream: stream,
     builder: (context, snapshot) {
-      if (!snapshot.hasData)
-        return const Center(child: CircularProgressIndicator());
+      if (!snapshot.hasData) {
+        return const Center(child: ModernLoadingIndicator());
+      }
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -444,7 +784,10 @@ class _RecordList extends StatelessWidget {
             label: Text(addLabel),
           ),
           const SizedBox(height: 12),
-          ...snapshot.data!.map((doc) => Card(child: builder(doc.data()))),
+          ...snapshot.data!.map(
+            (doc) =>
+                Card(child: builder({...doc.data(), '_documentId': doc.id})),
+          ),
         ],
       );
     },
@@ -600,8 +943,9 @@ class _TransfersTab extends StatelessWidget {
             ? _number(received[i]['receivedQuantity'])
             : 0;
         final available = _number(sourceData['stockQuantity']);
-        if (available < sentQuantity)
+        if (available < sentQuantity) {
           throw Exception('Not enough stock for ${item['name']}');
+        }
         transaction.update(source.reference, {
           'stockQuantity': available - sentQuantity,
           'updatedAt': FieldValue.serverTimestamp(),
@@ -641,8 +985,9 @@ class _TransfersTab extends StatelessWidget {
   Widget build(BuildContext context) => StreamBuilder(
     stream: _businessDocs('stock_transfers', user),
     builder: (context, snapshot) {
-      if (!snapshot.hasData)
-        return const Center(child: CircularProgressIndicator());
+      if (!snapshot.hasData) {
+        return const Center(child: ModernLoadingIndicator());
+      }
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -733,7 +1078,7 @@ class _CreateTransferDialogState extends State<_CreateTransferDialog> {
                 .snapshots(),
             builder: (context, productSnapshot) {
               if (!branchSnapshot.hasData || !productSnapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
+                return const Center(child: ModernLoadingIndicator());
               }
               final branches = branchSnapshot.data!.docs
                   .where(

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -103,7 +104,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               !expenseSnapshot.hasData ||
                               !onlineSnapshot.hasData) {
                             return const Center(
-                              child: CircularProgressIndicator(),
+                              child: ModernLoadingIndicator(),
                             );
                           }
 

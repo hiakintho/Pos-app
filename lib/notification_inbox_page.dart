@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 
 import 'models.dart';
 import 'customer_marketplace.dart';
@@ -69,7 +70,7 @@ class NotificationInboxPage extends StatelessWidget {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: ModernLoadingIndicator());
         }
         final docs = snapshot.data!.docs.toList()
           ..sort(

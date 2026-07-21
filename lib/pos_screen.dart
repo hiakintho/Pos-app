@@ -2,21 +2,30 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 import 'commerce_rules.dart';
 import 'database_helper.dart';
 import 'models.dart';
 import 'notification_inbox_page.dart';
+import 'product_recognition_camera.dart';
 
 class POSScreen extends StatefulWidget {
   final User user;
   final VoidCallback? onOpenMenu;
-  const POSScreen({super.key, required this.user, this.onOpenMenu});
+  final Map<String, bool>? permissions;
+  const POSScreen({
+    super.key,
+    required this.user,
+    this.onOpenMenu,
+    this.permissions,
+  });
 
   @override
   State<POSScreen> createState() => _POSScreenState();
@@ -29,6 +38,7 @@ class _POSScreenState extends State<POSScreen> {
   final TextEditingController _checkoutCustomerController =
       TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  final SpeechToText _speech = SpeechToText();
   final NumberFormat _currencyFormat = NumberFormat.currency(
     locale: 'sw_TZ',
     symbol: 'Tsh ',
@@ -36,6 +46,7 @@ class _POSScreenState extends State<POSScreen> {
   );
 
   List<Product> _products = [];
+  List<_PosCustomer> _customers = [];
   CommerceRules _rules = const CommerceRules(priceGroups: [], taxRules: []);
   final List<List<CartItem>> _suspendedCarts = [];
   String? _loadError;
@@ -46,6 +57,11 @@ class _POSScreenState extends State<POSScreen> {
   bool _sellOnCredit = false;
   bool _isLoading = true;
   bool _isCheckingOut = false;
+  bool _speechInitialized = false;
+  _VoiceSearchTarget? _listeningTarget;
+  String _speechLanguage = 'en';
+  bool _productQueryFromVoice = false;
+  bool _customerQueryFromVoice = false;
   String get _businessId => widget.user.businessId ?? 'default_business';
 
   @override
@@ -55,6 +71,7 @@ class _POSScreenState extends State<POSScreen> {
     _paidController.addListener(_refreshIfMounted);
     _checkoutCustomerController.addListener(_refreshIfMounted);
     _loadProducts();
+    _loadCustomers();
   }
 
   @override
@@ -66,6 +83,7 @@ class _POSScreenState extends State<POSScreen> {
     _paidController.dispose();
     _checkoutCustomerController.dispose();
     _searchFocusNode.dispose();
+    _speech.cancel();
     super.dispose();
   }
 
@@ -132,6 +150,29 @@ class _POSScreenState extends State<POSScreen> {
     }
   }
 
+  Future<void> _loadCustomers() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('customers')
+          .get();
+      final customers =
+          snapshot.docs
+              .where((doc) {
+                return (doc.data()['businessId'] as String? ??
+                        'default_business') ==
+                    _businessId;
+              })
+              .map(_PosCustomer.fromDoc)
+              .toList()
+            ..sort(
+              (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+            );
+      if (mounted) setState(() => _customers = customers);
+    } catch (e) {
+      debugPrint('Could not load POS customers: $e');
+    }
+  }
+
   Future<CommerceRules> _loadCommerceRules() async {
     try {
       return await CommerceRules.load(_businessId);
@@ -160,14 +201,159 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   List<Product> get _filteredProducts {
-    final query = _searchController.text.trim().toLowerCase();
+    final query = _normalizeSearch(_searchController.text);
     if (query.isEmpty) return _products;
 
     return _products.where((product) {
-      return product.name.toLowerCase().contains(query) ||
-          product.barcode.toLowerCase().contains(query) ||
-          product.category.toLowerCase().contains(query);
+      return _matchesSearch(query, [
+        product.name,
+        product.barcode,
+        product.category,
+        product.brandName ?? '',
+        ...product.aliases,
+      ]);
     }).toList();
+  }
+
+  List<_PosCustomer> get _filteredCustomers {
+    final query = _normalizeSearch(_checkoutCustomerController.text);
+    if (query.isEmpty) return const [];
+    return _customers
+        .where((customer) {
+          return _matchesSearch(query, [
+            customer.name,
+            customer.phone,
+            ...customer.aliases,
+          ]);
+        })
+        .take(5)
+        .toList();
+  }
+
+  String _normalizeSearch(String value) {
+    var normalized = value.toLowerCase().trim();
+    for (final phrase in const [
+      'search for ',
+      'search ',
+      'find ',
+      'tafuta ',
+      'nitafutie ',
+    ]) {
+      if (normalized.startsWith(phrase)) {
+        normalized = normalized.substring(phrase.length);
+        break;
+      }
+    }
+    return normalized
+        .replaceAll(RegExp(r'[^a-z0-9\u00c0-\u024f]+'), ' ')
+        .trim();
+  }
+
+  bool _matchesSearch(String query, Iterable<String> values) {
+    final compactQuery = query.replaceAll(' ', '');
+    return values.any((value) {
+      final normalized = _normalizeSearch(value);
+      return normalized.contains(query) ||
+          normalized.replaceAll(' ', '').contains(compactQuery);
+    });
+  }
+
+  Future<void> _toggleVoiceSearch(_VoiceSearchTarget target) async {
+    if (_listeningTarget != null) {
+      await _speech.stop();
+      if (mounted) setState(() => _listeningTarget = null);
+      return;
+    }
+
+    if (!_speechInitialized) {
+      final available = await _speech.initialize(
+        onStatus: (status) {
+          if ((status == 'done' || status == 'notListening') && mounted) {
+            setState(() => _listeningTarget = null);
+          }
+        },
+        onError: (error) {
+          if (!mounted) return;
+          setState(() => _listeningTarget = null);
+          _showMessage('Voice search error: ${error.errorMsg}');
+        },
+      );
+      if (!available) {
+        _showMessage(
+          'Speech recognition is unavailable. Check microphone permission and installed speech languages.',
+        );
+        return;
+      }
+      _speechInitialized = true;
+    }
+
+    final locales = await _speech.locales();
+    final desiredPrefix = _speechLanguage == 'sw' ? 'sw' : 'en';
+    String? localeId;
+    for (final locale in locales) {
+      if (locale.localeId.toLowerCase().startsWith(desiredPrefix)) {
+        localeId = locale.localeId;
+        break;
+      }
+    }
+    if (localeId == null) {
+      _showMessage(
+        _speechLanguage == 'sw'
+            ? 'Kiswahili speech recognition is not installed on this device.'
+            : 'English speech recognition is not installed on this device.',
+      );
+      return;
+    }
+
+    setState(() => _listeningTarget = target);
+    await _speech.listen(
+      listenOptions: SpeechListenOptions(
+        localeId: localeId,
+        partialResults: true,
+        cancelOnError: true,
+        listenMode: ListenMode.search,
+      ),
+      onResult: (result) {
+        if (!mounted || result.recognizedWords.trim().isEmpty) return;
+        final controller = target == _VoiceSearchTarget.product
+            ? _searchController
+            : _checkoutCustomerController;
+        controller.value = TextEditingValue(
+          text: result.recognizedWords,
+          selection: TextSelection.collapsed(
+            offset: result.recognizedWords.length,
+          ),
+        );
+        setState(() {
+          if (target == _VoiceSearchTarget.product) {
+            _productQueryFromVoice = true;
+          } else {
+            _customerQueryFromVoice = true;
+          }
+        });
+      },
+    );
+  }
+
+  Future<bool> _confirmVoiceChange(String message) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Confirm voice selection'),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Confirm'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   double get _subtotalAmount =>
@@ -250,23 +436,7 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   void _submitSearch(String value) {
-    final query = value.trim().toLowerCase();
-    if (query.isEmpty) return;
-
-    final exactMatch = _findProductByCodeOrName(query);
-    if (exactMatch != null) {
-      _addToCart(exactMatch);
-      _searchController.clear();
-      _searchFocusNode.requestFocus();
-      return;
-    }
-
-    final matches = _filteredProducts;
-    if (matches.length == 1) {
-      _addToCart(matches.first);
-      _searchController.clear();
-      _searchFocusNode.requestFocus();
-    }
+    // Search results are selected manually to prevent accidental additions.
   }
 
   Product? _findProductByCodeOrName(String value) {
@@ -308,6 +478,29 @@ class _POSScreenState extends State<POSScreen> {
       ),
     );
     _searchFocusNode.requestFocus();
+  }
+
+  Future<void> _openAiProductCamera() async {
+    if (_products.isEmpty) {
+      _showMessage('Load Firebase products before using AI recognition.');
+      return;
+    }
+    final query = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => ProductRecognitionCamera(
+          productNames: _products.map((product) => product.name).toList(),
+        ),
+      ),
+    );
+    if (query == null || query.trim().isEmpty || !mounted) return;
+    setState(() {
+      _searchController.text = query.trim();
+      _productQueryFromVoice = false;
+    });
+    _searchFocusNode.requestFocus();
+    _showMessage(
+      'AI recognized "$query". Select the correct product from the results.',
+    );
   }
 
   void _removeOne(CartItem item) {
@@ -785,6 +978,14 @@ class _POSScreenState extends State<POSScreen> {
             onPressed: _isLoading ? null : _openScanner,
             icon: const Icon(Icons.qr_code_scanner),
           ),
+          if (widget.user.role == UserRole.superAdmin ||
+              widget.permissions == null ||
+              widget.permissions!['ai_product_recognition'] == true)
+            IconButton(
+              tooltip: 'Recognize product with AI camera',
+              onPressed: _isLoading ? null : _openAiProductCamera,
+              icon: const Icon(Icons.center_focus_strong),
+            ),
           IconButton(
             tooltip: 'Refresh products',
             onPressed: _isLoading ? null : _loadProducts,
@@ -793,7 +994,7 @@ class _POSScreenState extends State<POSScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: ModernLoadingIndicator())
           : Column(
               children: [
                 _searchPane(keyboardVisible: keyboardVisible),
@@ -839,23 +1040,66 @@ class _POSScreenState extends State<POSScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          Row(
+            children: [
+              const Icon(Icons.translate, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Voice language:',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(width: 8),
+              DropdownButton<String>(
+                value: _speechLanguage,
+                isDense: true,
+                items: const [
+                  DropdownMenuItem(value: 'en', child: Text('English')),
+                  DropdownMenuItem(value: 'sw', child: Text('Kiswahili')),
+                ],
+                onChanged: _listeningTarget == null
+                    ? (value) {
+                        if (value != null) {
+                          setState(() => _speechLanguage = value);
+                        }
+                      }
+                    : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           SearchBar(
             controller: _searchController,
             focusNode: _searchFocusNode,
             hintText: 'Search product name or barcode',
             leading: const Icon(Icons.search),
             trailing: [
+              IconButton(
+                tooltip: _listeningTarget == _VoiceSearchTarget.product
+                    ? 'Stop listening'
+                    : 'Search products by voice',
+                onPressed: () => _toggleVoiceSearch(_VoiceSearchTarget.product),
+                icon: Icon(
+                  _listeningTarget == _VoiceSearchTarget.product
+                      ? Icons.mic
+                      : Icons.mic_none,
+                  color: _listeningTarget == _VoiceSearchTarget.product
+                      ? Theme.of(context).colorScheme.error
+                      : null,
+                ),
+              ),
               if (_searchController.text.isNotEmpty)
                 IconButton(
                   tooltip: 'Clear search',
                   onPressed: () {
                     _searchController.clear();
+                    _productQueryFromVoice = false;
                     _searchFocusNode.requestFocus();
                   },
                   icon: const Icon(Icons.close),
                 ),
             ],
             textInputAction: TextInputAction.search,
+            onChanged: (_) => _productQueryFromVoice = false,
             onSubmitted: _submitSearch,
           ),
           const SizedBox(height: 8),
@@ -922,7 +1166,13 @@ class _POSScreenState extends State<POSScreen> {
             enabled: !outOfStock,
             onTap: outOfStock
                 ? null
-                : () {
+                : () async {
+                    if (_productQueryFromVoice) {
+                      final confirmed = await _confirmVoiceChange(
+                        'Add ${product.name} to the cart?',
+                      );
+                      if (!confirmed) return;
+                    }
                     _addToCart(product);
                     _searchFocusNode.requestFocus();
                   },
@@ -1236,16 +1486,78 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   Widget _customerField({bool isDense = false}) {
-    return TextField(
-      controller: _checkoutCustomerController,
-      decoration: InputDecoration(
-        labelText: _sellOnCredit ? 'Customer name' : 'Customer name (optional)',
-        border: const OutlineInputBorder(),
-        contentPadding: isDense
-            ? const EdgeInsets.symmetric(horizontal: 12, vertical: 10)
-            : null,
-      ),
-      textInputAction: TextInputAction.next,
+    final matches = _filteredCustomers;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          controller: _checkoutCustomerController,
+          onChanged: (_) => _customerQueryFromVoice = false,
+          decoration: InputDecoration(
+            labelText: _sellOnCredit
+                ? 'Search customer'
+                : 'Search customer (optional)',
+            hintText: 'Name, phone, or alias',
+            border: const OutlineInputBorder(),
+            contentPadding: isDense
+                ? const EdgeInsets.symmetric(horizontal: 12, vertical: 10)
+                : null,
+            suffixIcon: IconButton(
+              tooltip: _listeningTarget == _VoiceSearchTarget.customer
+                  ? 'Stop listening'
+                  : 'Search customers by voice',
+              onPressed: () => _toggleVoiceSearch(_VoiceSearchTarget.customer),
+              icon: Icon(
+                _listeningTarget == _VoiceSearchTarget.customer
+                    ? Icons.mic
+                    : Icons.mic_none,
+                color: _listeningTarget == _VoiceSearchTarget.customer
+                    ? Theme.of(context).colorScheme.error
+                    : null,
+              ),
+            ),
+          ),
+          textInputAction: TextInputAction.next,
+        ),
+        if (matches.isNotEmpty)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 144),
+            child: Card(
+              margin: const EdgeInsets.only(top: 4),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: matches.length,
+                itemBuilder: (context, index) {
+                  final customer = matches[index];
+                  return ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.person_outline),
+                    title: Text(customer.name),
+                    subtitle: customer.phone.isEmpty
+                        ? null
+                        : Text(customer.phone),
+                    onTap: () async {
+                      if (_customerQueryFromVoice) {
+                        final confirmed = await _confirmVoiceChange(
+                          'Use ${customer.name} for this sale?',
+                        );
+                        if (!confirmed) return;
+                      }
+                      setState(() {
+                        _checkoutCustomerController.text = customer.name;
+                        _checkoutCustomerController.selection =
+                            TextSelection.collapsed(
+                              offset: customer.name.length,
+                            );
+                        _customerQueryFromVoice = false;
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -1391,7 +1703,7 @@ class _POSScreenState extends State<POSScreen> {
             ? const SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: ModernLoadingIndicator(strokeWidth: 2),
               )
             : showIcon
             ? const Icon(Icons.point_of_sale)
@@ -1446,6 +1758,45 @@ class _PaymentSummaryLine extends StatelessWidget {
         const Spacer(),
         Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
       ],
+    );
+  }
+}
+
+enum _VoiceSearchTarget { product, customer }
+
+class _PosCustomer {
+  final String id;
+  final String name;
+  final String phone;
+  final List<String> aliases;
+
+  const _PosCustomer({
+    required this.id,
+    required this.name,
+    required this.phone,
+    required this.aliases,
+  });
+
+  factory _PosCustomer.fromDoc(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+    final rawAliases = data['aliases'];
+    final aliases = rawAliases is Iterable
+        ? rawAliases
+              .map((value) => value.toString().trim())
+              .where((value) => value.isNotEmpty)
+              .toList()
+        : (rawAliases?.toString() ?? '')
+              .split(',')
+              .map((value) => value.trim())
+              .where((value) => value.isNotEmpty)
+              .toList();
+    return _PosCustomer(
+      id: doc.id,
+      name: (data['name'] as String? ?? 'Customer').trim(),
+      phone: (data['phone'] as String? ?? '').trim(),
+      aliases: aliases,
     );
   }
 }

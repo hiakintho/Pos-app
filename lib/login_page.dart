@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'main.dart';
@@ -193,7 +194,7 @@ class _LoginPageState extends State<LoginPage> {
                                   ? const SizedBox(
                                       width: 20,
                                       height: 20,
-                                      child: CircularProgressIndicator(
+                                      child: ModernLoadingIndicator(
                                         strokeWidth: 2,
                                       ),
                                     )

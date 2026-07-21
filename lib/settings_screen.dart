@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'firebase_options.dart';
@@ -75,9 +76,49 @@ const List<_FeatureDefinition> _systemFeatures = [
   ),
   _FeatureDefinition('reports', 'Reports', 'View reports and analytics'),
   _FeatureDefinition(
+    'ai_business_advisor',
+    'AI Business Advisor',
+    'Generate dashboard insights and cost-saving advice',
+  ),
+  _FeatureDefinition(
+    'ai_support',
+    'AI Support Chat',
+    'Chat with the system-aware AI support assistant',
+  ),
+  _FeatureDefinition(
+    'ai_product_recognition',
+    'AI Product Recognition',
+    'Recognize products from camera images in POS',
+  ),
+  _FeatureDefinition(
     'business_management',
     'Business Management',
-    'Accounting, employees, assets, accounts and stock transfers',
+    'Open the business management workspace',
+  ),
+  _FeatureDefinition(
+    'accounting',
+    'Accounting',
+    'View the automatic business ledger',
+  ),
+  _FeatureDefinition(
+    'financial_accounts',
+    'Financial Accounts',
+    'Manage bank, mobile-money, and cash accounts',
+  ),
+  _FeatureDefinition(
+    'payroll',
+    'Payroll',
+    'Manage employees and salary payments',
+  ),
+  _FeatureDefinition(
+    'asset_management',
+    'Asset Management',
+    'Manage assets, values, and depreciation',
+  ),
+  _FeatureDefinition(
+    'delivery_management',
+    'Delivery Management',
+    'Manage delivery staff and all delivery activities',
   ),
   _FeatureDefinition('settings', 'Settings', 'Open administration settings'),
   _FeatureDefinition(
@@ -181,7 +222,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'roleId': UserRole.deliveryBoy,
       'displayName': 'Delivery Boy',
       'businessId': _businessId,
-      'permissions': {for (final feature in _systemFeatures) feature.id: false},
+      'permissions': {
+        for (final feature in _systemFeatures)
+          feature.id: feature.id == 'delivery_management',
+      },
       'isSystemRole': true,
     }, SetOptions(merge: true));
 
@@ -407,7 +451,7 @@ class _OnlineBusinessSettingsPageState
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Online Payment & Business')),
     body: _loading
-        ? const Center(child: CircularProgressIndicator())
+        ? const Center(child: ModernLoadingIndicator())
         : ListView(
             padding: const EdgeInsets.all(20),
             children: [
@@ -620,7 +664,7 @@ class UserManagementPage extends StatelessWidget {
                 stream: _usersStream(),
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Center(child: ModernLoadingIndicator());
                   }
 
                   final users = snapshot.data!;
@@ -740,7 +784,7 @@ class _RoleManagementPageState extends State<RoleManagementPage> {
         stream: _rolesStream(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: ModernLoadingIndicator());
           }
 
           final roles = snapshot.data!;
@@ -851,7 +895,7 @@ class BranchManagementPage extends StatelessWidget {
         stream: _branchesStream(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: ModernLoadingIndicator());
           }
           final branches = snapshot.data!;
           if (branches.isEmpty) {
@@ -1014,7 +1058,7 @@ class _AddUserSheetState extends State<_AddUserSheet> {
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: ModernLoadingIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.person_add),
                 label: Text(_isSaving ? 'Saving...' : 'Add User'),
@@ -1661,6 +1705,23 @@ String _featureGroup(String featureId) {
   if ({'expenses', 'approve_expenses'}.contains(featureId)) {
     return 'Expenses & Finance';
   }
+  if ({
+    'business_management',
+    'accounting',
+    'financial_accounts',
+    'payroll',
+    'asset_management',
+  }.contains(featureId)) {
+    return 'Business Management';
+  }
+  if (featureId == 'delivery_management') return 'Delivery Management';
+  if ({
+    'ai_business_advisor',
+    'ai_support',
+    'ai_product_recognition',
+  }.contains(featureId)) {
+    return 'Artificial Intelligence';
+  }
   return 'Administration';
 }
 
@@ -1670,6 +1731,9 @@ IconData _featureGroupIcon(String group) => switch (group) {
   'Products & Inventory' => Icons.inventory_2,
   'Purchases & Suppliers' => Icons.local_shipping,
   'Expenses & Finance' => Icons.account_balance_wallet,
+  'Business Management' => Icons.business_center,
+  'Delivery Management' => Icons.delivery_dining,
+  'Artificial Intelligence' => Icons.auto_awesome,
   _ => Icons.admin_panel_settings,
 };
 

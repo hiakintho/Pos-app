@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 
 import 'models.dart';
 
@@ -39,7 +40,7 @@ class CategoryManagementPage extends StatelessWidget {
         stream: _categories(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: ModernLoadingIndicator());
           }
           final categories = snapshot.data!;
           if (categories.isEmpty) {
@@ -106,7 +107,7 @@ class _CategoryProductsPage extends StatelessWidget {
             .snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: ModernLoadingIndicator());
           }
           final products = snapshot.data!.docs.where((doc) {
             return (doc.data()['businessId'] as String? ??
@@ -181,7 +182,7 @@ class PriceGroupManagementPage extends StatelessWidget {
         stream: _groups(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: ModernLoadingIndicator());
           }
           final groups = snapshot.data!;
           if (groups.isEmpty) {
@@ -251,7 +252,7 @@ class TaxManagementPage extends StatelessWidget {
         stream: _taxes(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: ModernLoadingIndicator());
           }
           final taxes = snapshot.data!;
           if (taxes.isEmpty) {
@@ -446,9 +447,7 @@ class _PriceGroupSheetState extends State<_PriceGroupSheet> {
                           .snapshots(),
                       builder: (context, snapshot) {
                         if (!snapshot.hasData) {
-                          return const Center(
-                            child: CircularProgressIndicator(),
-                          );
+                          return const Center(child: ModernLoadingIndicator());
                         }
                         final products = snapshot.data!.docs.where((doc) {
                           return (doc.data()['businessId'] as String? ??
@@ -711,7 +710,7 @@ Widget _saveButton(bool isSaving, VoidCallback onPressed) {
           ? const SizedBox(
               width: 18,
               height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: ModernLoadingIndicator(strokeWidth: 2),
             )
           : const Icon(Icons.save),
       label: Text(isSaving ? 'Saving...' : 'Save'),

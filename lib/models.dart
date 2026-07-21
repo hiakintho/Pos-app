@@ -183,6 +183,7 @@ class Product {
   final String? expiryDate;
   final String? manufacturingDate;
   final String? description;
+  final List<String> aliases;
   final bool isAvailableOnline;
   final String? shopName;
   final String? lipaNumber;
@@ -213,6 +214,7 @@ class Product {
     this.expiryDate,
     this.manufacturingDate,
     this.description,
+    this.aliases = const [],
     this.isAvailableOnline = false,
     this.shopName,
     this.lipaNumber,
@@ -245,6 +247,7 @@ class Product {
       'expiryDate': expiryDate,
       'manufacturingDate': manufacturingDate,
       'description': description,
+      'aliases': aliases.join(','),
       'isAvailableOnline': isAvailableOnline,
       'shopName': shopName,
       'lipaNumber': lipaNumber,
@@ -278,6 +281,7 @@ class Product {
       expiryDate: _nullableStringValue(map['expiryDate']),
       manufacturingDate: _nullableStringValue(map['manufacturingDate']),
       description: _nullableStringValue(map['description']),
+      aliases: _stringListValue(map['aliases']),
       isAvailableOnline:
           map['isAvailableOnline'] == true || map['isAvailableOnline'] == 1,
       shopName: _nullableStringValue(map['shopName']),

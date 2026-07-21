@@ -30,7 +30,7 @@ class DatabaseHelper {
 
       return await openDatabase(
         path,
-        version: 6,
+        version: 7,
         onCreate: _createDB,
         onUpgrade: _upgradeDB,
       );
@@ -62,6 +62,7 @@ class DatabaseHelper {
         expiryDate TEXT,
         manufacturingDate TEXT,
         description TEXT,
+        aliases TEXT,
         isAvailableOnline INTEGER DEFAULT 0,
         shopName TEXT,
         lipaNumber TEXT,
@@ -173,6 +174,13 @@ class DatabaseHelper {
             'ALTER TABLE products ADD COLUMN ${entry.key} ${entry.value}',
           );
         }
+      }
+    }
+    if (oldVersion < 7) {
+      final columns = await db.rawQuery('PRAGMA table_info(products)');
+      final existing = columns.map((column) => column['name']).toSet();
+      if (!existing.contains('aliases')) {
+        await db.execute('ALTER TABLE products ADD COLUMN aliases TEXT');
       }
     }
   }

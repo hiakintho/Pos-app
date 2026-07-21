@@ -1,6 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' as auth;
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 
+import 'firebase_options.dart';
 import 'models.dart';
 import 'notification_inbox_page.dart';
 
@@ -12,6 +16,16 @@ class DeliveryBoyManagementPage extends StatelessWidget {
     required this.user,
     this.onOpenMenu,
   });
+
+  Future<void> _addDeliveryBoy(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _AddDeliveryBoyDialog(
+        businessId: user.businessId ?? 'default_business',
+        branchId: user.branchId,
+      ),
+    );
+  }
 
   Future<void> _announce(
     BuildContext context,
@@ -63,6 +77,11 @@ class DeliveryBoyManagementPage extends StatelessWidget {
         title: const Text('Delivery Team'),
         actions: [NotificationBellButton(user: user)],
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _addDeliveryBoy(context),
+        icon: const Icon(Icons.person_add),
+        label: const Text('Add delivery person'),
+      ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance.collection('users').snapshots(),
         builder: (context, usersSnapshot) =>
@@ -72,7 +91,7 @@ class DeliveryBoyManagementPage extends StatelessWidget {
                   .snapshots(),
               builder: (context, ratingSnapshot) {
                 if (!usersSnapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const Center(child: ModernLoadingIndicator());
                 }
                 final drivers = usersSnapshot.data!.docs
                     .where(
@@ -84,7 +103,7 @@ class DeliveryBoyManagementPage extends StatelessWidget {
                 if (drivers.isEmpty) {
                   return const Center(
                     child: Text(
-                      'No delivery users. Add them from User Management.',
+                      'No delivery users yet. Use Add delivery person.',
                     ),
                   );
                 }
@@ -150,4 +169,139 @@ class DeliveryBoyManagementPage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AddDeliveryBoyDialog extends StatefulWidget {
+  final String businessId;
+  final String? branchId;
+  const _AddDeliveryBoyDialog({required this.businessId, this.branchId});
+
+  @override
+  State<_AddDeliveryBoyDialog> createState() => _AddDeliveryBoyDialogState();
+}
+
+class _AddDeliveryBoyDialogState extends State<_AddDeliveryBoyDialog> {
+  final formKey = GlobalKey<FormState>();
+  final name = TextEditingController();
+  final email = TextEditingController();
+  final password = TextEditingController();
+  final phone = TextEditingController();
+  final vehicle = TextEditingController();
+  bool saving = false;
+
+  @override
+  void dispose() {
+    for (final controller in [name, email, password, phone, vehicle]) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> save() async {
+    if (!formKey.currentState!.validate()) return;
+    setState(() => saving = true);
+    FirebaseApp? secondaryApp;
+    try {
+      secondaryApp = await Firebase.initializeApp(
+        name: 'delivery_creation_${DateTime.now().microsecondsSinceEpoch}',
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      final secondaryAuth = auth.FirebaseAuth.instanceFor(app: secondaryApp);
+      final credential = await secondaryAuth.createUserWithEmailAndPassword(
+        email: email.text.trim(),
+        password: password.text,
+      );
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(credential.user!.uid)
+          .set({
+            'id': credential.user!.uid,
+            'name': name.text.trim(),
+            'email': email.text.trim(),
+            'phone': phone.text.trim(),
+            'vehicle': vehicle.text.trim(),
+            'role': UserRole.deliveryBoy,
+            'businessId': widget.businessId,
+            'branchId': widget.branchId,
+            'deliveryAvailable': true,
+            'isActive': true,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+      await secondaryAuth.signOut();
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Delivery person added.')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not add delivery person: $e')),
+      );
+    } finally {
+      await secondaryApp?.delete();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Add delivery person'),
+    content: SizedBox(
+      width: 460,
+      child: Form(
+        key: formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _field(name, 'Full name'),
+              _field(email, 'Email', emailField: true),
+              _field(password, 'Temporary password', passwordField: true),
+              _field(phone, 'Phone number'),
+              _field(vehicle, 'Vehicle / plate number', required: false),
+            ],
+          ),
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: saving ? null : () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: saving ? null : save,
+        child: Text(saving ? 'Adding...' : 'Add'),
+      ),
+    ],
+  );
+
+  Widget _field(
+    TextEditingController controller,
+    String label, {
+    bool required = true,
+    bool emailField = false,
+    bool passwordField = false,
+  }) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: TextFormField(
+      controller: controller,
+      obscureText: passwordField,
+      keyboardType: emailField ? TextInputType.emailAddress : null,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
+      validator: (value) {
+        if (required && (value == null || value.trim().isEmpty)) {
+          return '$label is required';
+        }
+        if (passwordField && (value?.length ?? 0) < 6) {
+          return 'Use at least 6 characters';
+        }
+        return null;
+      },
+    ),
+  );
 }

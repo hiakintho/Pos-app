@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -152,9 +153,7 @@ class AuthGate extends StatelessWidget {
       stream: auth.FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const Scaffold(body: Center(child: ModernLoadingIndicator()));
         }
 
         final firebaseUser = snapshot.data;
@@ -165,7 +164,7 @@ class AuthGate extends StatelessWidget {
           builder: (context, userSnapshot) {
             if (userSnapshot.connectionState == ConnectionState.waiting) {
               return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
+                body: Center(child: ModernLoadingIndicator()),
               );
             }
 
@@ -194,7 +193,7 @@ class AuthGate extends StatelessWidget {
                 builder: (context, approvalSnapshot) {
                   if (!approvalSnapshot.hasData) {
                     return const Scaffold(
-                      body: Center(child: CircularProgressIndicator()),
+                      body: Center(child: ModernLoadingIndicator()),
                     );
                   }
                   final status =
@@ -212,7 +211,7 @@ class AuthGate extends StatelessWidget {
                     builder: (context, businessSnapshot) {
                       if (!businessSnapshot.hasData) {
                         return const Scaffold(
-                          body: Center(child: CircularProgressIndicator()),
+                          body: Center(child: ModernLoadingIndicator()),
                         );
                       }
                       final expiry = businessSnapshot.data!
@@ -458,14 +457,22 @@ class _MainNavigationState extends State<MainNavigation> {
         _NavigationItem(
           label: 'Dashboard',
           icon: Icons.dashboard,
-          screen: DashboardScreen(user: widget.user, onOpenMenu: _openDrawer),
+          screen: DashboardScreen(
+            user: widget.user,
+            onOpenMenu: _openDrawer,
+            permissions: permissions,
+          ),
           showInPrimaryNavigation: true,
         ),
       if (can('pos'))
         _NavigationItem(
           label: 'POS',
           icon: Icons.shopping_cart,
-          screen: POSScreen(user: widget.user, onOpenMenu: _openDrawer),
+          screen: POSScreen(
+            user: widget.user,
+            onOpenMenu: _openDrawer,
+            permissions: permissions,
+          ),
           showInPrimaryNavigation: true,
         ),
       if (can('inventory'))
@@ -506,16 +513,30 @@ class _MainNavigationState extends State<MainNavigation> {
           ),
           showInPrimaryNavigation: true,
         ),
-      if (widget.user.role == UserRole.superAdmin)
+      if (can('business_management') ||
+          can('accounting') ||
+          can('financial_accounts') ||
+          can('payroll') ||
+          can('asset_management'))
         _NavigationItem(
           label: 'Business Management',
           icon: Icons.account_balance,
           screen: BusinessManagementScreen(
             user: widget.user,
             onOpenMenu: _openDrawer,
+            permissions: permissions,
           ),
         ),
       if (widget.user.role == UserRole.superAdmin)
+        _NavigationItem(
+          label: 'Stock Transfers',
+          icon: Icons.swap_horiz,
+          screen: StockTransfersScreen(
+            user: widget.user,
+            onOpenMenu: _openDrawer,
+          ),
+        ),
+      if (can('delivery_management'))
         _NavigationItem(
           label: 'Delivery Team',
           icon: Icons.delivery_dining,
@@ -541,7 +562,12 @@ class _MainNavigationState extends State<MainNavigation> {
       _NavigationItem(
         label: 'Support',
         icon: Icons.support_agent,
-        screen: CustomerSupportPage(user: widget.user, onOpenMenu: _openDrawer),
+        screen: CustomerSupportPage(
+          user: widget.user,
+          onOpenMenu: _openDrawer,
+          aiEnabled:
+              widget.user.role == UserRole.superAdmin || can('ai_support'),
+        ),
       ),
       _NavigationItem(
         label: 'Notifications',
@@ -565,7 +591,15 @@ String _subscriptionParent(String featureId) => switch (featureId) {
   'manage_price_groups' ||
   'branch_sales_monitoring' => 'sales_management',
   'user_management' || 'role_management' || 'branch_management' => 'settings',
-  'business_management' => 'reports',
+  'business_management' ||
+  'accounting' ||
+  'financial_accounts' ||
+  'payroll' ||
+  'asset_management' => 'reports',
+  'delivery_management' => 'online_sales',
+  'ai_business_advisor' => 'dashboard',
+  'ai_support' => 'settings',
+  'ai_product_recognition' => 'pos',
   _ => featureId,
 };
 

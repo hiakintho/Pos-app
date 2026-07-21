@@ -16,7 +16,10 @@ class ProfilePage extends StatelessWidget {
           ],
         ),
         actions: [
-          IconButton(icon: const Icon(Icons.add_box_outlined), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.add_box_outlined),
+            onPressed: () {},
+          ),
           IconButton(icon: const Icon(Icons.menu), onPressed: () {}),
         ],
       ),
@@ -49,10 +52,16 @@ class ProfilePage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('User Name', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    'User Name',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   Text('Digital Creator'),
                   Text('Flutter Developer | UI/UX Enthusiast'),
-                  Text('Check out my latest work below! 🚀', style: TextStyle(color: Colors.blue)),
+                  Text(
+                    'Check out my latest work below! 🚀',
+                    style: TextStyle(color: Colors.blue),
+                  ),
                 ],
               ),
             ),
@@ -66,9 +75,14 @@ class ProfilePage extends StatelessWidget {
                       onPressed: () {},
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Colors.grey),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(5),
+                        ),
                       ),
-                      child: const Text('Edit Profile', style: TextStyle(color: Colors.white)),
+                      child: const Text(
+                        'Edit Profile',
+                        style: TextStyle(color: Colors.white),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -77,9 +91,14 @@ class ProfilePage extends StatelessWidget {
                       onPressed: () {},
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Colors.grey),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(5),
+                        ),
                       ),
-                      child: const Text('Share Profile', style: TextStyle(color: Colors.white)),
+                      child: const Text(
+                        'Share Profile',
+                        style: TextStyle(color: Colors.white),
+                      ),
                     ),
                   ),
                 ],
@@ -111,7 +130,10 @@ class ProfilePage extends StatelessWidget {
   Column _buildStatColumn(String value, String label) {
     return Column(
       children: [
-        Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
         Text(label, style: const TextStyle(fontSize: 14, color: Colors.grey)),
       ],
     );

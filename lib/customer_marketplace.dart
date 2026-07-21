@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -344,7 +345,7 @@ class _ShopPageState extends State<_ShopPage> {
         stream: FirebaseFirestore.instance.collection('products').snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: ModernLoadingIndicator());
           }
           final all = snapshot.data!.docs
               .where((doc) => doc.data()['isAvailableOnline'] == true)
@@ -933,94 +934,111 @@ class _CartPageState extends State<_CartPage> {
 
   Future<void> _checkout() async {
     if (widget.cart.isEmpty || _checkingOut) return;
-    final checkoutLines = widget.cart.values
-        .map(
-          (line) => _CheckoutLine(
-            product: line.product,
-            imageUrl: line.imageUrl,
-            quantity: line.quantity,
-          ),
-        )
-        .toList(growable: false);
-    final linesByShop = <String, List<_CheckoutLine>>{};
-    for (final line in checkoutLines) {
-      final shopId = line.product.businessId ?? 'default_business';
-      linesByShop.putIfAbsent(shopId, () => []).add(line);
-    }
-
-    final firestore = FirebaseFirestore.instance;
-    final shops = <String, Map<String, dynamic>>{};
-    final requiredPayments = <String, double>{};
-    final paymentMessages = <String>[];
-    for (final entry in linesByShop.entries) {
-      final shopDoc = await firestore
-          .collection('businesses')
-          .doc(entry.key)
-          .get();
-      final shop = shopDoc.data() ?? const <String, dynamic>{};
-      shops[entry.key] = shop;
-      final defaultTiming =
-          shop['onlinePaymentTiming'] as String? ?? 'before_order';
-      final defaultAmount = shop['onlinePaymentAmount'] as String? ?? 'full';
-      final partialPercent =
-          ((shop['onlinePartialPercent'] as num?)?.toDouble() ?? 50)
-              .clamp(1, 100)
-              .toDouble();
-      final requiredNow = entry.value.fold<double>(0, (total, line) {
-        final timing = line.product.paymentTiming == 'business_default'
-            ? defaultTiming
-            : line.product.paymentTiming;
-        final policy = line.product.paymentAmountPolicy == 'business_default'
-            ? defaultAmount
-            : line.product.paymentAmountPolicy;
-        if (timing != 'before_order') return total;
-        final lineTotal =
-            line.product.price * line.quantity +
-            (line.product.freeShipping ? 0 : line.product.shippingFee);
-        return total +
-            (policy == 'partial'
-                ? lineTotal * partialPercent / 100
-                : lineTotal);
-      });
-      requiredPayments[entry.key] = requiredNow;
-      if (requiredNow > 0) {
-        final shopName =
-            shop['name'] ?? entry.value.first.product.shopName ?? 'Shop';
-        paymentMessages.add(
-          '$shopName: ${_money(requiredNow)} '
-          '(Lipa number: ${shop['lipaNumber'] ?? 'Not configured'})',
-        );
-      }
-    }
-    if (paymentMessages.isNotEmpty) {
-      if (!mounted) return;
-      final accepted = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Pay before placing order'),
-          content: Text(
-            '${paymentMessages.join('\n')}\n\nContinue only after making each payment.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('I have paid'),
-            ),
-          ],
-        ),
-      );
-      if (accepted != true) return;
-    }
     setState(() => _checkingOut = true);
     try {
-      final customerDoc = await firestore
-          .collection('users')
-          .doc(widget.customer.id)
-          .get();
+      final checkoutLines = widget.cart.values
+          .map(
+            (line) => _CheckoutLine(
+              product: line.product,
+              imageUrl: line.imageUrl,
+              quantity: line.quantity,
+            ),
+          )
+          .toList(growable: false);
+      final linesByShop = <String, List<_CheckoutLine>>{};
+      for (final line in checkoutLines) {
+        final shopId = line.product.businessId ?? 'default_business';
+        linesByShop.putIfAbsent(shopId, () => []).add(line);
+      }
+
+      final firestore = FirebaseFirestore.instance;
+      final shops = <String, Map<String, dynamic>>{};
+      final requiredPayments = <String, double>{};
+      final paymentMessages = <String>[];
+      for (final entry in linesByShop.entries) {
+        final shopDoc = await firestore
+            .collection('businesses')
+            .doc(entry.key)
+            .get();
+        final shop = shopDoc.data() ?? const <String, dynamic>{};
+        shops[entry.key] = shop;
+        final defaultTiming = _textValue(
+          shop['onlinePaymentTiming'],
+          fallback: 'before_order',
+        );
+        final defaultAmount = _textValue(
+          shop['onlinePaymentAmount'],
+          fallback: 'full',
+        );
+        final partialPercent = _numberValue(
+          shop['onlinePartialPercent'],
+          fallback: 50,
+        ).clamp(1, 100).toDouble();
+        final requiredNow = entry.value.fold<double>(0, (total, line) {
+          final timing = line.product.paymentTiming == 'business_default'
+              ? defaultTiming
+              : line.product.paymentTiming;
+          final policy = line.product.paymentAmountPolicy == 'business_default'
+              ? defaultAmount
+              : line.product.paymentAmountPolicy;
+          if (timing != 'before_order') return total;
+          final lineTotal =
+              line.product.price * line.quantity +
+              (line.product.freeShipping ? 0 : line.product.shippingFee);
+          return total +
+              (policy == 'partial'
+                  ? lineTotal * partialPercent / 100
+                  : lineTotal);
+        });
+        requiredPayments[entry.key] = requiredNow;
+        if (requiredNow > 0) {
+          final shopName =
+              shop['name'] ?? entry.value.first.product.shopName ?? 'Shop';
+          paymentMessages.add(
+            '$shopName: ${_money(requiredNow)} '
+            '(Lipa number: ${shop['lipaNumber'] ?? 'Not configured'})',
+          );
+        }
+      }
+      if (paymentMessages.isNotEmpty) {
+        if (!mounted) return;
+        final accepted = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Pay before placing order'),
+            content: Text(
+              '${paymentMessages.join('\n')}\n\nContinue only after making each payment.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('I have paid'),
+              ),
+            ],
+          ),
+        );
+        if (accepted != true) return;
+      }
+      final customerRef = firestore.collection('users').doc(widget.customer.id);
+      final customerDoc = await customerRef.get();
+      final customerData = customerDoc.data() ?? const <String, dynamic>{};
+      final storedLocation = _geoPointValue(customerData['location']);
+      final deliveryLocation = await _currentDeliveryLocation(storedLocation);
+      if (deliveryLocation == null) {
+        throw Exception(
+          'No delivery GPS location is available. Enable location services and try again.',
+        );
+      }
+      if (storedLocation != deliveryLocation) {
+        await customerRef.set({
+          'location': deliveryLocation,
+          'locationUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
       final orderRefs = {
         for (final shopId in linesByShop.keys)
           shopId: firestore.collection('customer_orders').doc(),
@@ -1065,14 +1083,18 @@ class _CartPageState extends State<_CartPage> {
             'customerId': widget.customer.id,
             'customerName': widget.customer.name,
             'customerEmail': widget.customer.email,
-            'customerPhone': customerDoc.data()?['phone'] ?? '',
+            'customerPhone': customerData['phone'] ?? '',
             'status': 'placed',
-            'deliveryAddress': customerDoc.data()?['address'] ?? '',
-            'deliveryLocation': customerDoc.data()?['location'],
-            'paymentTiming':
-                shop['onlinePaymentTiming'] as String? ?? 'before_order',
-            'paymentAmountPolicy':
-                shop['onlinePaymentAmount'] as String? ?? 'full',
+            'deliveryAddress': customerData['address'] ?? '',
+            'deliveryLocation': deliveryLocation,
+            'paymentTiming': _textValue(
+              shop['onlinePaymentTiming'],
+              fallback: 'before_order',
+            ),
+            'paymentAmountPolicy': _textValue(
+              shop['onlinePaymentAmount'],
+              fallback: 'full',
+            ),
             'requiredPayment': requiredNow,
             'paidAmount': requiredNow,
             'paymentStatus': requiredNow >= orderTotal
@@ -1131,6 +1153,30 @@ class _CartPageState extends State<_CartPage> {
       }
     } finally {
       if (mounted) setState(() => _checkingOut = false);
+    }
+  }
+
+  Future<GeoPoint?> _currentDeliveryLocation(GeoPoint? fallback) async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return fallback;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission != LocationPermission.always &&
+          permission != LocationPermission.whileInUse) {
+        return fallback;
+      }
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
+      return GeoPoint(position.latitude, position.longitude);
+    } catch (e) {
+      debugPrint('Could not refresh checkout GPS location: $e');
+      return fallback;
     }
   }
 
@@ -1227,7 +1273,7 @@ class _CustomerOrdersPage extends StatelessWidget {
             .snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: ModernLoadingIndicator());
           }
           final docs = snapshot.data!.docs.toList()
             ..sort(
@@ -1878,7 +1924,7 @@ class CustomerOrderManagementPage extends StatelessWidget {
             );
           }
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: ModernLoadingIndicator());
           }
           final orders =
               snapshot.data!.docs.where((doc) {
@@ -2109,18 +2155,22 @@ class _DeliveryOrdersPageState extends State<DeliveryOrdersPage> {
             accuracy: LocationAccuracy.high,
             distanceFilter: 20,
           ),
-        ).listen(
-          (position) => order.update({
-            'driverLocation': GeoPoint(position.latitude, position.longitude),
-            'driverLocationUpdatedAt': FieldValue.serverTimestamp(),
-            'driverRoute': FieldValue.arrayUnion([
-              {
-                'location': GeoPoint(position.latitude, position.longitude),
-                'at': Timestamp.now(),
-              },
-            ]),
-          }),
-        );
+        ).listen((position) async {
+          try {
+            await order.update({
+              'driverLocation': GeoPoint(position.latitude, position.longitude),
+              'driverLocationUpdatedAt': FieldValue.serverTimestamp(),
+              'driverRoute': FieldValue.arrayUnion([
+                {
+                  'location': GeoPoint(position.latitude, position.longitude),
+                  'at': Timestamp.now(),
+                },
+              ]),
+            });
+          } catch (e) {
+            debugPrint('Could not publish driver GPS location: $e');
+          }
+        });
   }
 
   Future<void> _arrived(DocumentReference<Map<String, dynamic>> order) async {
@@ -2156,7 +2206,7 @@ class _DeliveryOrdersPageState extends State<DeliveryOrdersPage> {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: ModernLoadingIndicator());
         }
         final businessId = widget.user.businessId ?? 'default_business';
         final orders =
@@ -2208,11 +2258,7 @@ class _DeliveryOrdersPageState extends State<DeliveryOrdersPage> {
                     ),
                     if (location != null)
                       OutlinedButton.icon(
-                        onPressed: () => _openInMaps(
-                          location,
-                          data['deliveryAddress'] as String? ??
-                              'Customer delivery location',
-                        ),
+                        onPressed: () => _openDirections(location),
                         icon: const Icon(Icons.map),
                         label: Text(
                           'Open ${data['deliveryAddress'] ?? 'customer location'} in Maps',
@@ -2311,11 +2357,53 @@ IconData _statusIcon(String status) => switch (status) {
 };
 
 Future<void> _openInMaps(GeoPoint location, String label) async {
-  final query = Uri.encodeComponent(
-    '${location.latitude},${location.longitude} ($label)',
-  );
-  final uri = Uri.parse(
-    'https://www.google.com/maps/search/?api=1&query=$query',
-  );
-  await launchUrl(uri, mode: LaunchMode.externalApplication);
+  final coordinates = '${location.latitude},${location.longitude}';
+  final uri = Uri.https('www.google.com', '/maps/search/', {
+    'api': '1',
+    'query': coordinates,
+  });
+  try {
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened) debugPrint('Could not open $label in Maps.');
+  } catch (e) {
+    debugPrint('Could not open $label in Maps: $e');
+  }
+}
+
+Future<void> _openDirections(GeoPoint destination) async {
+  final coordinates = '${destination.latitude},${destination.longitude}';
+  final uri = Uri.https('www.google.com', '/maps/dir/', {
+    'api': '1',
+    'destination': coordinates,
+    'travelmode': 'driving',
+    'dir_action': 'navigate',
+  });
+  try {
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened) debugPrint('Could not open delivery navigation.');
+  } catch (e) {
+    debugPrint('Could not open delivery navigation: $e');
+  }
+}
+
+String _textValue(dynamic value, {required String fallback}) {
+  final text = value?.toString().trim() ?? '';
+  return text.isEmpty ? fallback : text;
+}
+
+double _numberValue(dynamic value, {required double fallback}) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? fallback;
+}
+
+GeoPoint? _geoPointValue(dynamic value) {
+  if (value is GeoPoint) return value;
+  if (value is Map) {
+    final latitude = _numberValue(value['latitude'], fallback: double.nan);
+    final longitude = _numberValue(value['longitude'], fallback: double.nan);
+    if (latitude.isFinite && longitude.isFinite) {
+      return GeoPoint(latitude, longitude);
+    }
+  }
+  return null;
 }

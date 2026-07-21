@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -210,7 +211,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
               }
 
               if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
+                return const Center(child: ModernLoadingIndicator());
               }
 
               final productDocs = snapshot.data!.docs.where((doc) {
@@ -1012,6 +1013,7 @@ class _AddProductSheetState extends State<_AddProductSheet> {
   final _expiryController = TextEditingController();
   final _manufacturingController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _aliasesController = TextEditingController();
   final _shopNameController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -1066,6 +1068,7 @@ class _AddProductSheetState extends State<_AddProductSheet> {
       _expiryController.text = product.expiryDate ?? '';
       _manufacturingController.text = product.manufacturingDate ?? '';
       _descriptionController.text = product.description ?? '';
+      _aliasesController.text = product.aliases.join(', ');
       _shopNameController.text = product.shopName ?? '';
       _selectedCategory = product.category;
       _selectedPriceGroupId = product.priceGroupId;
@@ -1094,6 +1097,7 @@ class _AddProductSheetState extends State<_AddProductSheet> {
     _expiryController.dispose();
     _manufacturingController.dispose();
     _descriptionController.dispose();
+    _aliasesController.dispose();
     _shopNameController.dispose();
     _shippingFeeController.dispose();
     super.dispose();
@@ -1188,6 +1192,11 @@ class _AddProductSheetState extends State<_AddProductSheet> {
         expiryDate: _optionalText(_expiryController),
         manufacturingDate: _optionalText(_manufacturingController),
         description: _optionalText(_descriptionController),
+        aliases: _aliasesController.text
+            .split(',')
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toList(),
         isAvailableOnline: _isAvailableOnline,
         shopName: _optionalText(_shopNameController),
         lipaNumber: _businessLipaNumber ?? widget.product?.lipaNumber,
@@ -1203,6 +1212,7 @@ class _AddProductSheetState extends State<_AddProductSheet> {
 
       await productRef.set({
         ...product.toMap(),
+        'aliases': product.aliases,
         'imageUrl': imageUrl,
         if (widget.product == null) 'createdBy': widget.user.id,
         if (widget.product == null) 'createdAt': FieldValue.serverTimestamp(),
@@ -1411,6 +1421,18 @@ class _AddProductSheetState extends State<_AddProductSheet> {
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
+                  controller: _aliasesController,
+                  decoration: const InputDecoration(
+                    labelText: 'Search aliases (optional)',
+                    hintText: 'mkate, bread loaf, white loaf',
+                    helperText:
+                        'Separate English and Kiswahili names with commas.',
+                    border: OutlineInputBorder(),
+                  ),
+                  textInputAction: TextInputAction.next,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
                   controller: _descriptionController,
                   minLines: 2,
                   maxLines: 4,
@@ -1519,7 +1541,7 @@ class _AddProductSheetState extends State<_AddProductSheet> {
                         ? const SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: ModernLoadingIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.save),
                     label: Text(
@@ -2032,7 +2054,7 @@ class _PurchaseStockSheetState extends State<_PurchaseStockSheet> {
                         ? const SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: ModernLoadingIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.add_shopping_cart),
                     label: Text(_isSaving ? 'Saving...' : 'Add Stock'),

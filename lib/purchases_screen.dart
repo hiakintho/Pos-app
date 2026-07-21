@@ -1,8 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'models.dart';
+import 'business_finance.dart';
 import 'notification_inbox_page.dart';
 
 class PurchasesScreen extends StatefulWidget {
@@ -336,6 +340,25 @@ class _PurchaseOrdersTab extends StatelessWidget {
                     onPressed: () => _receiveGoods(doc),
                     icon: const Icon(Icons.download_done),
                   ),
+                if ((data['invoiceAttachmentUrl'] as String? ?? '').isNotEmpty)
+                  IconButton(
+                    tooltip: 'Open invoice attachment',
+                    onPressed: () => launchUrl(
+                      Uri.parse(data['invoiceAttachmentUrl'] as String),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    icon: const Icon(Icons.receipt_long),
+                  ),
+                if ((data['deliveryNoteAttachmentUrl'] as String? ?? '')
+                    .isNotEmpty)
+                  IconButton(
+                    tooltip: 'Open delivery note',
+                    onPressed: () => launchUrl(
+                      Uri.parse(data['deliveryNoteAttachmentUrl'] as String),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    icon: const Icon(Icons.description_outlined),
+                  ),
                 PopupMenuButton<String>(
                   tooltip: 'Payment status',
                   onSelected: (value) => doc.reference.update({
@@ -554,6 +577,8 @@ class _PurchaseOrderSheetState extends State<_PurchaseOrderSheet> {
   String? _productId;
   bool _isCredit = false;
   bool _isSaving = false;
+  PlatformFile? _invoiceAttachment;
+  PlatformFile? _deliveryNoteAttachment;
 
   String get _businessId => widget.user.businessId ?? 'default_business';
 
@@ -577,29 +602,121 @@ class _PurchaseOrderSheetState extends State<_PurchaseOrderSheet> {
         unitCost == null) {
       return;
     }
+    BusinessPaymentSelection? payment;
+    if (!_isCredit) {
+      payment = await showBusinessPaymentDialog(
+        context,
+        businessId: _businessId,
+        amount: quantity * unitCost,
+        title: 'Pay supplier purchase',
+      );
+      if (payment == null || !mounted) return;
+    }
     setState(() => _isSaving = true);
-    await FirebaseFirestore.instance.collection('purchase_orders').add({
-      'businessId': _businessId,
-      'branchId': widget.user.branchId ?? 'main',
-      'supplierName': _supplier.text.trim(),
-      'productId': _productId,
-      'productName': _productName.text.trim(),
-      'quantity': quantity,
-      'unitCost': unitCost,
-      'totalAmount': quantity * unitCost,
-      'invoiceNumber': _invoiceNumber.text.trim(),
-      'invoiceStatus': 'unverified',
-      'approvalStatus': 'pending',
-      'receivingStatus': 'ordered',
-      'paymentStatus': _isCredit ? 'unpaid' : 'paid',
-      'isCredit': _isCredit,
-      'notes': _notes.text.trim(),
-      'createdBy': widget.user.id,
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-    if (mounted) Navigator.pop(context);
+    try {
+      final orderRef = FirebaseFirestore.instance
+          .collection('purchase_orders')
+          .doc();
+      final invoiceUpload = await _uploadAttachment(
+        orderRef.id,
+        'invoice',
+        _invoiceAttachment,
+      );
+      final deliveryUpload = await _uploadAttachment(
+        orderRef.id,
+        'delivery_note',
+        _deliveryNoteAttachment,
+      );
+      final orderData = <String, dynamic>{
+        'businessId': _businessId,
+        'branchId': widget.user.branchId ?? 'main',
+        'supplierName': _supplier.text.trim(),
+        'productId': _productId,
+        'productName': _productName.text.trim(),
+        'quantity': quantity,
+        'unitCost': unitCost,
+        'totalAmount': quantity * unitCost,
+        'invoiceNumber': _invoiceNumber.text.trim(),
+        if (invoiceUpload != null) ...invoiceUpload,
+        if (deliveryUpload != null) ...deliveryUpload,
+        'invoiceStatus': 'unverified',
+        'approvalStatus': 'pending',
+        'receivingStatus': 'ordered',
+        'paymentStatus': _isCredit ? 'unpaid' : 'paid',
+        'isCredit': _isCredit,
+        'notes': _notes.text.trim(),
+        'createdBy': widget.user.id,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (_isCredit) {
+        await orderRef.set(orderData);
+      } else {
+        await recordBusinessOutflow(
+          sourceRef: orderRef,
+          sourceData: orderData,
+          businessId: _businessId,
+          payment: payment!,
+          amount: quantity * unitCost,
+          sourceType: 'purchase',
+          description: '${_supplier.text.trim()} - ${_productName.text.trim()}',
+        );
+      }
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not save purchase: $e')));
+    }
   }
+
+  Future<void> _pickAttachment(bool invoice) async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+      withData: true,
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      if (invoice) {
+        _invoiceAttachment = result.files.single;
+      } else {
+        _deliveryNoteAttachment = result.files.single;
+      }
+    });
+  }
+
+  Future<Map<String, dynamic>?> _uploadAttachment(
+    String orderId,
+    String type,
+    PlatformFile? file,
+  ) async {
+    if (file == null || file.bytes == null) return null;
+    final safeName = file.name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    final ref = FirebaseStorage.instance.ref(
+      'purchase_documents/$orderId/${type}_$safeName',
+    );
+    await ref.putData(
+      file.bytes!,
+      SettableMetadata(contentType: _contentType(file.extension)),
+    );
+    final prefix = type == 'invoice'
+        ? 'invoiceAttachment'
+        : 'deliveryNoteAttachment';
+    return {
+      '${prefix}Url': await ref.getDownloadURL(),
+      '${prefix}Name': file.name,
+      '${prefix}StoragePath': ref.fullPath,
+    };
+  }
+
+  String _contentType(String? extension) => switch (extension?.toLowerCase()) {
+    'pdf' => 'application/pdf',
+    'png' => 'image/png',
+    _ => 'image/jpeg',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -637,6 +754,18 @@ class _PurchaseOrderSheetState extends State<_PurchaseOrderSheet> {
           ),
           const SizedBox(height: 12),
           _field(_invoiceNumber, 'Invoice number', required: false),
+          const SizedBox(height: 8),
+          _attachmentButton(
+            label: 'Invoice attachment (optional)',
+            file: _invoiceAttachment,
+            onPressed: () => _pickAttachment(true),
+          ),
+          const SizedBox(height: 8),
+          _attachmentButton(
+            label: 'Delivery note attachment (optional)',
+            file: _deliveryNoteAttachment,
+            onPressed: () => _pickAttachment(false),
+          ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Purchase on credit'),
@@ -650,6 +779,19 @@ class _PurchaseOrderSheetState extends State<_PurchaseOrderSheet> {
       ),
     );
   }
+
+  Widget _attachmentButton({
+    required String label,
+    required PlatformFile? file,
+    required VoidCallback onPressed,
+  }) => OutlinedButton.icon(
+    onPressed: _isSaving ? null : onPressed,
+    icon: const Icon(Icons.attach_file),
+    label: Text(
+      file == null ? label : file.name,
+      overflow: TextOverflow.ellipsis,
+    ),
+  );
 
   Widget _productDropdown() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'main.dart';
@@ -193,7 +194,7 @@ class _RegisterPageState extends State<RegisterPage> {
             ),
             const SizedBox(height: 15),
             _availableRoles.isEmpty
-                ? const CircularProgressIndicator()
+                ? const ModernLoadingIndicator()
                 : DropdownButtonFormField<String>(
                     initialValue: _selectedRole,
                     dropdownColor: Colors.grey[900],
@@ -279,7 +280,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 onPressed: _isLoading ? null : _register,
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo),
                 child: _isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
+                    ? const ModernLoadingIndicator(color: Colors.white)
                     : const Text(
                         'Register',
                         style: TextStyle(color: Colors.white),

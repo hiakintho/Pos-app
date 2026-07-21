@@ -18,7 +18,9 @@ class PricedProduct {
   });
 
   double totalFor(int quantity) =>
-      (unitPrice * quantity) - (discountPerUnit * quantity) + (taxPerUnit * quantity);
+      (unitPrice * quantity) -
+      (discountPerUnit * quantity) +
+      (taxPerUnit * quantity);
 }
 
 class CommerceRules {
@@ -85,7 +87,7 @@ class CommerceRules {
       final applies = rule.targetType == 'price_group'
           ? matchedGroups.any((group) => group.id == rule.priceGroupId)
           : rule.productIds.contains(product.id) ||
-              rule.categories.contains(product.category);
+                rule.categories.contains(product.category);
       if (!applies) continue;
       taxPerUnit += taxableBase * (rule.rate / 100);
       notes.add('${rule.name}: ${rule.rate.toStringAsFixed(1)}% tax');

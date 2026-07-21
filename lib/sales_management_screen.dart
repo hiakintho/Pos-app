@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 import 'package:intl/intl.dart';
 
 import 'models.dart';
@@ -129,7 +130,7 @@ class SalesManagementScreen extends StatelessWidget {
                   .snapshots(),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const Center(child: ModernLoadingIndicator());
                 }
                 final allDocs = snapshot.data!.docs.where((doc) {
                   final data = doc.data();
@@ -611,7 +612,7 @@ class _CustomersTab extends StatelessWidget {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: ModernLoadingIndicator());
         }
         final docs = snapshot.data!.docs.where((doc) {
           return (doc.data()['businessId'] as String? ?? 'default_business') ==
@@ -786,6 +787,7 @@ class _CustomerSheetState extends State<_CustomerSheet> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
   final _address = TextEditingController();
+  final _aliases = TextEditingController();
   bool _isSaving = false;
 
   @override
@@ -793,6 +795,7 @@ class _CustomerSheetState extends State<_CustomerSheet> {
     _name.dispose();
     _phone.dispose();
     _address.dispose();
+    _aliases.dispose();
     super.dispose();
   }
 
@@ -804,6 +807,11 @@ class _CustomerSheetState extends State<_CustomerSheet> {
       'name': _name.text.trim(),
       'phone': _phone.text.trim(),
       'address': _address.text.trim(),
+      'aliases': _aliases.text
+          .split(',')
+          .map((value) => value.trim())
+          .where((value) => value.isNotEmpty)
+          .toList(),
       'createdAt': FieldValue.serverTimestamp(),
       'createdBy': widget.user.id,
     });
@@ -822,6 +830,8 @@ class _CustomerSheetState extends State<_CustomerSheet> {
           _field(_phone, 'Phone', required: false),
           const SizedBox(height: 12),
           _field(_address, 'Address', required: false),
+          const SizedBox(height: 12),
+          _field(_aliases, 'Search aliases (comma separated)', required: false),
           const SizedBox(height: 16),
           _saveButton(_isSaving, _save, 'Save Customer'),
         ],

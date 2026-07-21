@@ -1,6 +1,58 @@
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 admin.initializeApp(); const db = admin.firestore();
+const geminiApiKey = defineSecret("GEMINI_API_KEY");
+
+async function callGemini(contents, systemInstruction) {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey.value()}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemInstruction }] },
+        contents,
+        generationConfig: { temperature: 0.25, maxOutputTokens: 900 },
+      }),
+    },
+  );
+  if (!response.ok) throw new HttpsError("internal", `AI service error ${response.status}`);
+  const json = await response.json();
+  return json.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "No response generated.";
+}
+
+const systemGuide = `You are the embedded support assistant for a multi-platform POS system.
+The system covers POS checkout, products, stock, purchases and attachments, expenses, financial accounts and fees, accounting ledger, payroll and contracts, assets and depreciation, sales, online orders, delivery staff and tracking, reports, role/CRUD permissions, notifications, customer marketplace, and administrator support tickets.
+Give short, safe, practical instructions based only on supplied business context. Never claim to execute a transaction. For destructive, payment, payroll, stock, or checkout actions, tell the user to confirm in the relevant screen. Answer in English or Swahili matching the user.`;
+
+exports.aiSupportChat = onCall({ secrets: [geminiApiKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in is required.");
+  const message = String(request.data?.message || "").trim();
+  if (!message || message.length > 2000) throw new HttpsError("invalid-argument", "Enter a valid message.");
+  const history = Array.isArray(request.data?.history) ? request.data.history.slice(-10) : [];
+  const contents = [...history.map((item) => ({ role: item.role === "model" ? "model" : "user", parts: [{ text: String(item.text || "") }] })), { role: "user", parts: [{ text: message }] }];
+  return { text: await callGemini(contents, systemGuide) };
+});
+
+exports.aiBusinessAdvice = onCall({ secrets: [geminiApiKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in is required.");
+  const context = request.data?.context || {};
+  const prompt = `Analyze this POS business summary and return: 1) key insight, 2) cost reduction advice, 3) stock action, 4) cash-flow warning, 5) best-practice action. Use exact supplied figures and do not invent data.\n${JSON.stringify(context)}`;
+  return { text: await callGemini([{ role: "user", parts: [{ text: prompt }] }], systemGuide) };
+});
+
+exports.recognizeProductImage = onCall({ secrets: [geminiApiKey], memory: "512MiB" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in is required.");
+  const imageBase64 = String(request.data?.imageBase64 || "");
+  const mimeType = String(request.data?.mimeType || "image/jpeg");
+  if (!imageBase64 || imageBase64.length > 8_000_000) throw new HttpsError("invalid-argument", "Image is missing or too large.");
+  const productNames = Array.isArray(request.data?.productNames) ? request.data.productNames.slice(0, 300) : [];
+  const prompt = `Identify the retail product in this image. Choose the closest item from this inventory when possible: ${JSON.stringify(productNames)}. Return only compact JSON with keys detectedText, productName, searchQuery, confidence (0 to 1). Do not include markdown.`;
+  const text = await callGemini([{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: imageBase64 } }] }], systemGuide);
+  try { return JSON.parse(text.replace(/^```json|```$/g, "").trim()); } catch (_) { return { detectedText: text, productName: "", searchQuery: text, confidence: 0 }; }
+});
 async function notifyUsers(userIds,title,body,type,data={}) { const ids=[...new Set(userIds.filter(Boolean))]; if(!ids.length)return; const users=await Promise.all(ids.map(id=>db.collection("users").doc(id).get())); const tokens=[]; const batch=db.batch(); users.forEach(user=>{if(!user.exists)return; const n=db.collection("notifications").doc(); batch.set(n,{recipientId:user.id,title,body,type,data,read:false,createdAt:admin.firestore.FieldValue.serverTimestamp()}); tokens.push(...(user.data().fcmTokens||[]));}); await batch.commit(); if(tokens.length) await admin.messaging().sendEachForMulticast({tokens:[...new Set(tokens)],notification:{title,body},data:Object.fromEntries(Object.entries({type,...data}).map(([k,v])=>[k,String(v)])),android:{priority:"high",notification:{sound:"default",channelId:"pos_alerts"}},apns:{payload:{aps:{sound:"default"}}}}); }
 exports.newBusinessOwner=onDocumentCreated("businesses/{businessId}",async event=>{const b=event.data.data();const owners=await db.collection("users").where("role","==","system_owner").get();await notifyUsers(owners.docs.map(d=>d.id),"New business registration",`${b.ownerName||"An owner"} registered ${b.name||"a business"}.`,"new_business",{businessId:event.params.businessId});});
 exports.newOnlineOrder=onDocumentCreated("customer_orders/{orderId}",async event=>{const o=event.data.data(),recipients=[];for(const businessId of o.shopIds||[]){const users=await db.collection("users").where("businessId","==",businessId).where("role","==","super_admin").get();recipients.push(...users.docs.map(d=>d.id));}await notifyUsers(recipients,"New online order",`${o.customerName||"A customer"} placed a new order.`,"new_order",{orderId:event.params.orderId});});

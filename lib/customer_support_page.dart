@@ -1,14 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 
 import 'models.dart';
 import 'notification_inbox_page.dart';
+import 'ai_service.dart';
 
 class CustomerSupportPage extends StatelessWidget {
   final User user;
   final bool systemOwner;
   final VoidCallback? onOpenMenu;
   final bool embedded;
+  final bool aiEnabled;
 
   const CustomerSupportPage({
     super.key,
@@ -16,6 +19,7 @@ class CustomerSupportPage extends StatelessWidget {
     this.systemOwner = false,
     this.onOpenMenu,
     this.embedded = false,
+    this.aiEnabled = true,
   });
 
   @override
@@ -36,6 +40,17 @@ class CustomerSupportPage extends StatelessWidget {
               title: Text(systemOwner ? 'Customer Support' : 'Support'),
               actions: [
                 NotificationBellButton(user: user),
+                if (!systemOwner && aiEnabled)
+                  IconButton(
+                    tooltip: 'Chat with AI support',
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => _AiSupportChatPage(user: user),
+                      ),
+                    ),
+                    icon: const Icon(Icons.smart_toy),
+                  ),
                 if (systemOwner)
                   IconButton(
                     tooltip: 'Welcome message',
@@ -62,7 +77,7 @@ class CustomerSupportPage extends StatelessWidget {
               stream: stream,
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const Center(child: ModernLoadingIndicator());
                 }
                 final tickets =
                     snapshot.data!.docs.where((doc) {
@@ -157,6 +172,134 @@ class CustomerSupportPage extends StatelessWidget {
           }, SetOptions(merge: true));
     }
   }
+}
+
+class _AiSupportChatPage extends StatefulWidget {
+  final User user;
+  const _AiSupportChatPage({required this.user});
+
+  @override
+  State<_AiSupportChatPage> createState() => _AiSupportChatPageState();
+}
+
+class _AiSupportChatPageState extends State<_AiSupportChatPage> {
+  final input = TextEditingController();
+  final messages = <Map<String, String>>[
+    {
+      'role': 'model',
+      'text':
+          'Hello! I can explain how to use POS, stock, purchases, accounts, payroll, delivery, reports, permissions, and other system features. You can still open a human support ticket at any time.',
+    },
+  ];
+  bool sending = false;
+
+  @override
+  void dispose() {
+    input.dispose();
+    super.dispose();
+  }
+
+  Future<void> send() async {
+    final text = input.text.trim();
+    if (text.isEmpty || sending) return;
+    setState(() {
+      messages.add({'role': 'user', 'text': text});
+      input.clear();
+      sending = true;
+    });
+    try {
+      final response = await AiService.instance.supportChat(text, messages);
+      if (mounted) {
+        setState(() => messages.add({'role': 'model', 'text': response}));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(
+          () => messages.add({
+            'role': 'model',
+            'text':
+                'AI support is unavailable right now. Please create a human support ticket. ($e)',
+          }),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('AI System Support'),
+      actions: [
+        TextButton.icon(
+          onPressed: () => showDialog<void>(
+            context: context,
+            builder: (_) => _NewSupportTicketDialog(user: widget.user),
+          ),
+          icon: const Icon(Icons.support_agent),
+          label: const Text('Human support'),
+        ),
+      ],
+    ),
+    body: Column(
+      children: [
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: messages.length,
+            itemBuilder: (context, index) {
+              final message = messages[index];
+              final userMessage = message['role'] == 'user';
+              return Align(
+                alignment: userMessage
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                child: Card(
+                  color: userMessage
+                      ? Theme.of(context).colorScheme.primaryContainer
+                      : Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 650),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: SelectableText(message['text'] ?? ''),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (sending) const LinearProgressIndicator(),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: input,
+                    onSubmitted: (_) => send(),
+                    decoration: const InputDecoration(
+                      hintText: 'Ask how to use the system…',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  onPressed: sending ? null : send,
+                  icon: const Icon(Icons.send),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _SupportAvailabilityHeader extends StatelessWidget {

@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -369,11 +370,6 @@ class _SystemOwnerPageState extends State<SystemOwnerPage> {
               onSearch: _openSearch,
               onHelp: _openHelpManagement,
               onProfile: _openProfileManagement,
-              onSystemOwners: () => showDialog<void>(
-                context: context,
-                builder: (_) => const _AddSystemOwnerDialog(),
-              ),
-              onLogout: () => auth.FirebaseAuth.instance.signOut(),
             )
           : null,
       appBar: AppBar(
@@ -446,10 +442,12 @@ class _SystemOwnerPageState extends State<SystemOwnerPage> {
                   .collection('businesses')
                   .snapshots(),
               builder: (context, snapshot) {
-                if (_section == 3)
+                if (_section == 3) {
                   return const _SystemExpensesPage(embedded: true);
-                if (_section == 4)
+                }
+                if (_section == 4) {
                   return const _BusinessServicesPage(embedded: true);
+                }
                 if (_section == 5) {
                   return CustomerSupportPage(
                     user: widget.user,
@@ -458,7 +456,7 @@ class _SystemOwnerPageState extends State<SystemOwnerPage> {
                   );
                 }
                 if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const Center(child: ModernLoadingIndicator());
                 }
                 final businesses = snapshot.data!.docs;
                 _notifyNewBusinessRegistrations(businesses);
@@ -592,15 +590,11 @@ class _SystemMobileDrawer extends StatelessWidget {
   final VoidCallback onSearch;
   final VoidCallback onHelp;
   final VoidCallback onProfile;
-  final VoidCallback onSystemOwners;
-  final VoidCallback onLogout;
   const _SystemMobileDrawer({
     required this.onSection,
     required this.onSearch,
     required this.onHelp,
     required this.onProfile,
-    required this.onSystemOwners,
-    required this.onLogout,
   });
 
   @override
@@ -657,23 +651,6 @@ class _SystemMobileDrawer extends StatelessWidget {
             onTap: () {
               Navigator.pop(context);
               onProfile();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.admin_panel_settings),
-            title: const Text('System Owners'),
-            onTap: () {
-              Navigator.pop(context);
-              onSystemOwners();
-            },
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Logout', style: TextStyle(color: Colors.red)),
-            onTap: () {
-              Navigator.pop(context);
-              onLogout();
             },
           ),
         ],
@@ -765,8 +742,9 @@ class _BusinessHelpManagementPageState
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance.collection('businesses').snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData)
-          return const Center(child: CircularProgressIndicator());
+        if (!snapshot.hasData) {
+          return const Center(child: ModernLoadingIndicator());
+        }
         final businesses = snapshot.data!.docs;
         final selected = businesses
             .where((doc) => doc.id == _businessId)
@@ -811,7 +789,6 @@ class _BusinessHelpManagementPageState
                     role: UserRole.superAdmin,
                     businessId: selected.id,
                   ),
-                  showLogout: false,
                 ),
               ),
           ],
@@ -853,10 +830,11 @@ class _SystemOwnerProfilePageState extends State<_SystemOwnerProfilePage> {
           'profileUrl': _profileUrl.text.trim(),
           'profileUpdatedAt': FieldValue.serverTimestamp(),
         });
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Profile updated.')));
+    }
   }
 
   @override
@@ -868,8 +846,9 @@ class _SystemOwnerProfilePageState extends State<_SystemOwnerProfilePage> {
           .doc(widget.user.id)
           .get(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData)
-          return const Center(child: CircularProgressIndicator());
+        if (!snapshot.hasData) {
+          return const Center(child: ModernLoadingIndicator());
+        }
         final data = snapshot.data!.data() ?? {};
         if (!_loaded) {
           _loaded = true;
@@ -1455,7 +1434,7 @@ class _SystemExpensesPage extends StatelessWidget {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: ModernLoadingIndicator());
         }
         final docs = snapshot.data!.docs.toList()
           ..sort(
@@ -1587,7 +1566,7 @@ class _BusinessServicesPage extends StatelessWidget {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: ModernLoadingIndicator());
         }
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {

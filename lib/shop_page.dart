@@ -7,9 +7,15 @@ class ShopPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Shop', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Shop',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         actions: [
-          IconButton(icon: const Icon(Icons.calendar_today_outlined), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.calendar_today_outlined),
+            onPressed: () {},
+          ),
           IconButton(icon: const Icon(Icons.menu), onPressed: () {}),
         ],
       ),
@@ -60,7 +66,9 @@ class ShopPage extends StatelessWidget {
                         style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
-                          shadows: [Shadow(blurRadius: 10, color: Colors.black)],
+                          shadows: [
+                            Shadow(blurRadius: 10, color: Colors.black),
+                          ],
                         ),
                       ),
                     ),

@@ -4,15 +4,23 @@ import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 import 'package:intl/intl.dart';
 
 import 'models.dart';
 import 'notification_inbox_page.dart';
+import 'ai_service.dart';
 
 class DashboardScreen extends StatelessWidget {
   final User user;
   final VoidCallback? onOpenMenu;
-  const DashboardScreen({super.key, required this.user, this.onOpenMenu});
+  final Map<String, bool>? permissions;
+  const DashboardScreen({
+    super.key,
+    required this.user,
+    this.onOpenMenu,
+    this.permissions,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +72,7 @@ class DashboardScreen extends StatelessWidget {
                           !salesSnapshot.hasData ||
                           !purchaseSnapshot.hasData ||
                           !onlineSnapshot.hasData) {
-                        return const Center(child: CircularProgressIndicator());
+                        return const Center(child: ModernLoadingIndicator());
                       }
                       final data = _DashboardData.fromSnapshots(
                         productSnapshot.data!.docs,
@@ -73,7 +81,14 @@ class DashboardScreen extends StatelessWidget {
                         onlineSnapshot.data!.docs,
                         user.businessId ?? 'default_business',
                       );
-                      return _DashboardContent(user: user, data: data);
+                      return _DashboardContent(
+                        user: user,
+                        data: data,
+                        aiEnabled:
+                            user.role == UserRole.superAdmin ||
+                            permissions == null ||
+                            permissions!['ai_business_advisor'] == true,
+                      );
                     },
                   );
                 },
@@ -89,8 +104,13 @@ class DashboardScreen extends StatelessWidget {
 class _DashboardContent extends StatelessWidget {
   final User user;
   final _DashboardData data;
+  final bool aiEnabled;
 
-  const _DashboardContent({required this.user, required this.data});
+  const _DashboardContent({
+    required this.user,
+    required this.data,
+    required this.aiEnabled,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -179,6 +199,38 @@ class _DashboardContent extends StatelessWidget {
               },
             ),
             const SizedBox(height: 20),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _InsightCard(
+                  title: 'Most sold product',
+                  value: data.mostSoldProduct,
+                  detail: '${data.mostSoldUnits.toStringAsFixed(0)} units',
+                  icon: Icons.emoji_events,
+                  color: Colors.green,
+                ),
+                _InsightCard(
+                  title: 'Least sold product',
+                  value: data.leastSoldProduct,
+                  detail: '${data.leastSoldUnits.toStringAsFixed(0)} units',
+                  icon: Icons.trending_down,
+                  color: Colors.orange,
+                ),
+                _InsightCard(
+                  title: 'Average product sales',
+                  value: data.averageUnitsSold.toStringAsFixed(1),
+                  detail: 'units per inventory product',
+                  icon: Icons.analytics,
+                  color: Colors.blue,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (aiEnabled) ...[
+              _AiAdviceCard(data: data),
+              const SizedBox(height: 20),
+            ],
             LayoutBuilder(
               builder: (context, constraints) {
                 final isDesktop = constraints.maxWidth >= 900;
@@ -590,6 +642,142 @@ class _EmptyCard extends StatelessWidget {
   }
 }
 
+class _InsightCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final String detail;
+  final IconData icon;
+  final Color color;
+  const _InsightCard({
+    required this.title,
+    required this.value,
+    required this.detail,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 300,
+    child: Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: color.withValues(alpha: .15),
+              child: Icon(icon, color: color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.labelLarge),
+                  const SizedBox(height: 4),
+                  Text(value, style: Theme.of(context).textTheme.titleMedium),
+                  Text(detail, style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _AiAdviceCard extends StatefulWidget {
+  final _DashboardData data;
+  const _AiAdviceCard({required this.data});
+
+  @override
+  State<_AiAdviceCard> createState() => _AiAdviceCardState();
+}
+
+class _AiAdviceCardState extends State<_AiAdviceCard> {
+  String? advice;
+  bool loading = false;
+
+  Future<void> analyze() async {
+    setState(() => loading = true);
+    try {
+      final data = widget.data;
+      final result = await AiService.instance.businessAdvice({
+        'totalSales': data.salesTotal,
+        'posSales': data.posSalesTotal,
+        'onlineSales': data.onlineSalesTotal,
+        'transactions': data.salesCount,
+        'productCount': data.productCount,
+        'lowStockCount': data.lowStockCount,
+        'mostSoldProduct': data.mostSoldProduct,
+        'mostSoldUnits': data.mostSoldUnits,
+        'leastSoldProduct': data.leastSoldProduct,
+        'leastSoldUnits': data.leastSoldUnits,
+        'averageUnitsSold': data.averageUnitsSold,
+        'recentPurchaseCount': data.recentPurchases.length,
+      });
+      if (mounted) setState(() => advice = result);
+    } catch (e) {
+      if (mounted) {
+        setState(
+          () => advice =
+              'AI analysis is unavailable. Verify that the Gemini Cloud Function and secret are deployed. ($e)',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_awesome, color: Colors.deepPurple),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'AI Business Advisor',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: loading ? null : analyze,
+                icon: loading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: ModernLoadingIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.psychology),
+                label: Text(
+                  advice == null ? 'Analyze business' : 'Refresh advice',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            advice ??
+                'Generate data-based recommendations for stock, cash flow, cost reduction, and operating best practices.',
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Advice supports decisions; review figures before changing prices, stock, payroll, or payments.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class _DashboardData {
   final int productCount;
   final int lowStockCount;
@@ -606,6 +794,11 @@ class _DashboardData {
   final List<_ChartValue> categoryMix;
   final List<_ChartValue> dailySales;
   final List<_ChartValue> purchaseTrend;
+  final String mostSoldProduct;
+  final double mostSoldUnits;
+  final String leastSoldProduct;
+  final double leastSoldUnits;
+  final double averageUnitsSold;
 
   const _DashboardData({
     required this.productCount,
@@ -623,6 +816,11 @@ class _DashboardData {
     required this.categoryMix,
     required this.dailySales,
     required this.purchaseTrend,
+    required this.mostSoldProduct,
+    required this.mostSoldUnits,
+    required this.leastSoldProduct,
+    required this.leastSoldUnits,
+    required this.averageUnitsSold,
   });
 
   factory _DashboardData.fromSnapshots(
@@ -701,6 +899,37 @@ class _DashboardData {
     }
     if (onlineSalesTotal > 0) paymentTotals['Online'] = onlineSalesTotal;
 
+    final unitsByProduct = <String, double>{
+      for (final product in products) product.name: 0,
+    };
+    void collectItems(Map<String, dynamic> data) {
+      for (final raw in data['items'] as List? ?? const []) {
+        if (raw is! Map) continue;
+        final item = Map<String, dynamic>.from(raw);
+        final name = (item['name'] ?? item['productName'] ?? 'Unknown product')
+            .toString();
+        final quantity = (item['quantity'] as num?)?.toDouble() ?? 0;
+        unitsByProduct.update(
+          name,
+          (value) => value + quantity,
+          ifAbsent: () => quantity,
+        );
+      }
+    }
+
+    for (final sale in scopedSaleDocs) {
+      collectItems(sale.data());
+    }
+    for (final order in onlineOrders) {
+      collectItems(order.data());
+    }
+    final rankedProducts = unitsByProduct.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final totalUnits = rankedProducts.fold<double>(
+      0,
+      (total, item) => total + item.value,
+    );
+
     return _DashboardData(
       productCount: products.length,
       lowStockCount: lowStockProducts.length,
@@ -717,6 +946,17 @@ class _DashboardData {
       categoryMix: _chartValuesFromMap(categoryCounts),
       dailySales: _dailySalesChart(recentSales),
       purchaseTrend: _dailyPurchaseChart(recentPurchases),
+      mostSoldProduct: rankedProducts.isEmpty
+          ? 'No sales data'
+          : rankedProducts.first.key,
+      mostSoldUnits: rankedProducts.isEmpty ? 0 : rankedProducts.first.value,
+      leastSoldProduct: rankedProducts.isEmpty
+          ? 'No sales data'
+          : rankedProducts.last.key,
+      leastSoldUnits: rankedProducts.isEmpty ? 0 : rankedProducts.last.value,
+      averageUnitsSold: rankedProducts.isEmpty
+          ? 0
+          : totalUnits / rankedProducts.length,
     );
   }
 }

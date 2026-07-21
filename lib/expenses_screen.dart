@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'app_loading_indicator.dart';
 import 'package:intl/intl.dart';
 
 import 'models.dart';
+import 'business_finance.dart';
 import 'notification_inbox_page.dart';
 
 const List<String> _expenseCategories = [
@@ -126,7 +128,7 @@ class ExpensesScreen extends StatelessWidget {
                 );
               }
               if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
+                return const Center(child: ModernLoadingIndicator());
               }
 
               final docs = snapshot.data!.docs.where((doc) {
@@ -427,26 +429,50 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final amount = double.parse(_amount.text.trim());
+    final payment = await showBusinessPaymentDialog(
+      context,
+      businessId: _businessId,
+      amount: amount,
+      title: 'Pay business expense',
+    );
+    if (payment == null || !mounted) return;
     setState(() => _isSaving = true);
-    await FirebaseFirestore.instance.collection('expenses').add({
-      'businessId': _businessId,
-      'branchId': _selectedBranchId ?? widget.user.branchId ?? 'main',
-      'createdBy': widget.user.id,
-      'title': _title.text.trim(),
-      'category': _category,
-      'amount': amount,
-      'receiptNumber': _receiptNumber.text.trim(),
-      'paymentMethod': _paymentMethod,
-      'recurringFrequency': _recurringFrequency,
-      'isRecurring': _recurringFrequency != 'None',
-      'notes': _notes.text.trim(),
-      'validationStatus': 'pending',
-      'validatedBy': null,
-      'validatedAt': null,
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-    if (mounted) Navigator.pop(context);
+    final ref = FirebaseFirestore.instance.collection('expenses').doc();
+    try {
+      await recordBusinessOutflow(
+        sourceRef: ref,
+        businessId: _businessId,
+        payment: payment,
+        amount: amount,
+        sourceType: 'expense',
+        description: _title.text.trim(),
+        sourceData: {
+          'businessId': _businessId,
+          'branchId': _selectedBranchId ?? widget.user.branchId ?? 'main',
+          'createdBy': widget.user.id,
+          'title': _title.text.trim(),
+          'category': _category,
+          'amount': amount,
+          'receiptNumber': _receiptNumber.text.trim(),
+          'paymentMethod': _paymentMethod,
+          'recurringFrequency': _recurringFrequency,
+          'isRecurring': _recurringFrequency != 'None',
+          'notes': _notes.text.trim(),
+          'validationStatus': 'pending',
+          'validatedBy': null,
+          'validatedAt': null,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not record expense: $e')));
+    }
   }
 
   @override
