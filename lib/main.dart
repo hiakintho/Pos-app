@@ -25,6 +25,8 @@ import 'notification_inbox_page.dart';
 import 'notification_service.dart';
 import 'delivery_management_page.dart';
 import 'business_management_screen.dart';
+import 'account_security.dart';
+import 'security_lock.dart';
 
 const Color _spotifyGreen = Color(0xFF1DB954);
 const Color _spotifyBlack = Color(0xFF050505);
@@ -150,7 +152,7 @@ class AuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<auth.User?>(
-      stream: auth.FirebaseAuth.instance.authStateChanges(),
+      stream: auth.FirebaseAuth.instance.userChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: ModernLoadingIndicator()));
@@ -175,14 +177,25 @@ class AuthGate extends StatelessWidget {
             }
             NotificationService.register(appUser.id);
 
+            if (appUser.requiresEmailVerification &&
+                !firebaseUser.emailVerified) {
+              return const EmailVerificationPage();
+            }
+
+            Widget secured(Widget page) => SecurityLock(
+              key: ValueKey('security_${appUser.id}'),
+              userId: appUser.id,
+              child: page,
+            );
+
             if (appUser.role == UserRole.customer) {
-              return CustomerMarketplace(customer: appUser);
+              return secured(CustomerMarketplace(customer: appUser));
             }
             if (appUser.role == UserRole.deliveryBoy) {
-              return DeliveryOrdersPage(user: appUser);
+              return secured(DeliveryOrdersPage(user: appUser));
             }
             if (appUser.role == UserRole.systemOwner) {
-              return SystemOwnerPage(user: appUser);
+              return secured(SystemOwnerPage(user: appUser));
             }
             if (appUser.role == UserRole.superAdmin) {
               return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -201,7 +214,7 @@ class AuthGate extends StatelessWidget {
                           as String? ??
                       'approved';
                   if (status != 'approved') {
-                    return BusinessApprovalPendingPage(status: status);
+                    return secured(BusinessApprovalPendingPage(status: status));
                   }
                   return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                     stream: FirebaseFirestore.instance
@@ -221,22 +234,24 @@ class AuthGate extends StatelessWidget {
                           : null;
                       if (expiryDate != null &&
                           expiryDate.isBefore(DateTime.now())) {
-                        return const BusinessApprovalPendingPage(
-                          status: 'expired',
+                        return secured(
+                          const BusinessApprovalPendingPage(status: 'expired'),
                         );
                       }
-                      return MainNavigation(
-                        key: ValueKey(
-                          '${businessSnapshot.data!.data()?['allowedFeatures']}-${businessSnapshot.data!.data()?['subscriptionExpiresAt']}',
+                      return secured(
+                        MainNavigation(
+                          key: ValueKey(
+                            '${businessSnapshot.data!.data()?['allowedFeatures']}-${businessSnapshot.data!.data()?['subscriptionExpiresAt']}',
+                          ),
+                          user: appUser,
                         ),
-                        user: appUser,
                       );
                     },
                   );
                 },
               );
             }
-            return MainNavigation(user: appUser);
+            return secured(MainNavigation(user: appUser));
           },
         );
       },

@@ -77,17 +77,17 @@ const List<_FeatureDefinition> _systemFeatures = [
   _FeatureDefinition('reports', 'Reports', 'View reports and analytics'),
   _FeatureDefinition(
     'ai_business_advisor',
-    'AI Business Advisor',
+    'Smart Business Advisor',
     'Generate dashboard insights and cost-saving advice',
   ),
   _FeatureDefinition(
     'ai_support',
-    'AI Support Chat',
-    'Chat with the system-aware AI support assistant',
+    'Smart Support Chat',
+    'Chat with the system-aware Smart Support assistant',
   ),
   _FeatureDefinition(
     'ai_product_recognition',
-    'AI Product Recognition',
+    'Smart Product Camera',
     'Recognize products from camera images in POS',
   ),
   _FeatureDefinition(

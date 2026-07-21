@@ -15,6 +15,7 @@ import 'package:printing/printing.dart';
 
 import 'models.dart';
 import 'notification_inbox_page.dart';
+import 'account_security.dart';
 
 class CustomerRegistrationPage extends StatefulWidget {
   const CustomerRegistrationPage({super.key});
@@ -79,6 +80,7 @@ class _CustomerRegistrationPageState extends State<CustomerRegistrationPage> {
             email: _email.text.trim(),
             password: _password.text,
           );
+      await credential.user!.sendEmailVerification();
       await FirebaseFirestore.instance
           .collection('users')
           .doc(credential.user!.uid)
@@ -91,6 +93,7 @@ class _CustomerRegistrationPageState extends State<CustomerRegistrationPage> {
             if (_location != null) 'location': _location,
             'role': UserRole.customer,
             'isActive': true,
+            'requiresEmailVerification': true,
             'createdAt': FieldValue.serverTimestamp(),
           });
       if (mounted) Navigator.pop(context);
@@ -134,7 +137,13 @@ class _CustomerRegistrationPageState extends State<CustomerRegistrationPage> {
                       ),
                     ),
                   ),
-                  _field(_password, 'Password', password: true, minLength: 6),
+                  _field(
+                    _password,
+                    'Password',
+                    password: true,
+                    minLength: 10,
+                    strongPassword: true,
+                  ),
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
@@ -159,6 +168,7 @@ class _CustomerRegistrationPageState extends State<CustomerRegistrationPage> {
     TextInputType? type,
     bool password = false,
     int minLength = 1,
+    bool strongPassword = false,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -167,11 +177,14 @@ class _CustomerRegistrationPageState extends State<CustomerRegistrationPage> {
         keyboardType: type,
         obscureText: password,
         decoration: InputDecoration(labelText: label),
-        validator: (value) => (value?.trim().length ?? 0) < minLength
-            ? minLength == 1
-                  ? 'Required'
-                  : 'Use at least $minLength characters'
-            : null,
+        validator: (value) {
+          if ((value?.trim().length ?? 0) < minLength)
+            return minLength == 1
+                ? 'Required'
+                : 'Use at least $minLength characters';
+          if (strongPassword) return strongPasswordError(value!);
+          return null;
+        },
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'main.dart';
 import 'models.dart';
+import 'account_security.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -70,6 +71,13 @@ class _RegisterPageState extends State<RegisterPage> {
       );
       return;
     }
+    final passwordError = strongPasswordError(password);
+    if (passwordError != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(passwordError)));
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -85,7 +93,10 @@ class _RegisterPageState extends State<RegisterPage> {
         email: email,
         role: _selectedRole,
         branchId: _selectedBranch,
+        requiresEmailVerification: true,
       );
+
+      await userCredential.user!.sendEmailVerification();
 
       await FirebaseFirestore.instance
           .collection('users')
@@ -94,7 +105,11 @@ class _RegisterPageState extends State<RegisterPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Registration Successful!')),
+          const SnackBar(
+            content: Text(
+              'Registration successful. A verification email was sent.',
+            ),
+          ),
         );
         Navigator.pop(context);
       }
@@ -156,7 +171,8 @@ class _RegisterPageState extends State<RegisterPage> {
               controller: _passwordController,
               obscureText: true,
               decoration: InputDecoration(
-                hintText: 'Password',
+                hintText: 'Strong password (10+ characters)',
+                helperText: 'Uppercase, lowercase, number, and symbol required',
                 filled: true,
                 fillColor: Colors.grey[900],
                 border: OutlineInputBorder(

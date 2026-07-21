@@ -11,6 +11,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   firebase_core
   firebase_storage
   geolocator_windows
+  local_auth_windows
   printing
   speech_to_text_windows
   url_launcher_windows

@@ -42,7 +42,7 @@ class CustomerSupportPage extends StatelessWidget {
                 NotificationBellButton(user: user),
                 if (!systemOwner && aiEnabled)
                   IconButton(
-                    tooltip: 'Chat with AI support',
+                    tooltip: 'Chat with Smart Support',
                     onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -218,7 +218,7 @@ class _AiSupportChatPageState extends State<_AiSupportChatPage> {
           () => messages.add({
             'role': 'model',
             'text':
-                'AI support is unavailable right now. Please create a human support ticket. ($e)',
+                'Smart Support is unavailable right now. Please create a human support ticket. ($e)',
           }),
         );
       }
@@ -230,7 +230,7 @@ class _AiSupportChatPageState extends State<_AiSupportChatPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('AI System Support'),
+      title: const Text('Smart System Support'),
       actions: [
         TextButton.icon(
           onPressed: () => showDialog<void>(

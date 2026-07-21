@@ -18,6 +18,61 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
 
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _resetPassword() async {
+    final controller = TextEditingController(
+      text: _emailController.text.trim(),
+    );
+    final email = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset password'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(labelText: 'Account email'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Send reset link'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (email == null || email.isEmpty || !mounted) return;
+    try {
+      await auth.FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Password reset email sent. Check your inbox and spam folder.',
+            ),
+          ),
+        );
+    } on auth.FirebaseAuthException catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message ?? 'Could not send password reset email.'),
+          ),
+        );
+    }
+  }
+
   Future<void> _login() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -255,14 +310,10 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             ],
                           ),
-                          const Text(
-                            'Forgot your login details?',
-                            style: TextStyle(color: Colors.grey, fontSize: 12),
-                          ),
                           TextButton(
-                            onPressed: () {},
+                            onPressed: _isLoading ? null : _resetPassword,
                             child: const Text(
-                              'Get help.',
+                              'Forgot password? Send reset email',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,

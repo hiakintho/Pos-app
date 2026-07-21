@@ -14,6 +14,7 @@ import 'models.dart';
 import 'customer_support_page.dart';
 import 'notification_inbox_page.dart';
 import 'settings_screen.dart';
+import 'account_security.dart';
 
 Set<String>? _knownRegisteredBusinesses;
 
@@ -79,6 +80,7 @@ class _BusinessOwnerRegistrationPageState
             password: _password.text,
           );
       final uid = credential.user!.uid;
+      await credential.user!.sendEmailVerification();
       String? profileUrl;
       if (_profileImage != null) {
         final ref = FirebaseStorage.instance.ref('owner_profiles/$uid.jpg');
@@ -117,6 +119,7 @@ class _BusinessOwnerRegistrationPageState
         'branchId': branchRef.id,
         'profileUrl': profileUrl,
         'accountStatus': 'pending_payment_approval',
+        'requiresEmailVerification': true,
         'createdAt': FieldValue.serverTimestamp(),
       });
       await batch.commit();
@@ -170,7 +173,13 @@ class _BusinessOwnerRegistrationPageState
                 _field(_ownerName, 'Owner full name'),
                 _field(_businessName, 'Business name'),
                 _field(_email, 'Email', type: TextInputType.emailAddress),
-                _field(_password, 'Password', obscure: true, minimum: 6),
+                _field(
+                  _password,
+                  'Password',
+                  obscure: true,
+                  minimum: 10,
+                  strongPassword: true,
+                ),
                 _field(_branchName, 'Starting branch name'),
                 _field(_branchAddress, 'Starting branch address'),
                 _field(_paymentReference, 'Payment reference'),
@@ -207,6 +216,7 @@ class _BusinessOwnerRegistrationPageState
     TextInputType? type,
     bool obscure = false,
     int minimum = 1,
+    bool strongPassword = false,
   }) => Padding(
     padding: const EdgeInsets.only(bottom: 12),
     child: TextFormField(
@@ -217,6 +227,7 @@ class _BusinessOwnerRegistrationPageState
       validator: (value) {
         final requiredError = _required(value);
         if (requiredError != null) return requiredError;
+        if (strongPassword) return strongPasswordError(value!);
         return value!.length < minimum
             ? 'Use at least $minimum characters'
             : null;
@@ -403,6 +414,11 @@ class _SystemOwnerPageState extends State<SystemOwnerPage> {
               icon: const Icon(Icons.account_circle_outlined),
             ),
           NotificationBellButton(user: widget.user),
+          IconButton(
+            tooltip: 'Logout',
+            onPressed: () => auth.FirebaseAuth.instance.signOut(),
+            icon: const Icon(Icons.logout),
+          ),
         ],
       ),
       body: Row(

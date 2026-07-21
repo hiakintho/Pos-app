@@ -722,7 +722,7 @@ class _AiAdviceCardState extends State<_AiAdviceCard> {
       if (mounted) {
         setState(
           () => advice =
-              'AI analysis is unavailable. Verify that the Gemini Cloud Function and secret are deployed. ($e)',
+              'Smart Advisor is unavailable. Check the cloud connection and try again. ($e)',
         );
       }
     } finally {
@@ -743,7 +743,7 @@ class _AiAdviceCardState extends State<_AiAdviceCard> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'AI Business Advisor',
+                  'Smart Business Advisor',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),

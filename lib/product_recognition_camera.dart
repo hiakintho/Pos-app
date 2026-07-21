@@ -66,13 +66,16 @@ class _ProductRecognitionCameraState extends State<ProductRecognitionCamera> {
               .toString()
               .trim();
       if (!mounted) return;
-      if (query.isEmpty) throw Exception('No product could be recognized.');
+      if (query.isEmpty)
+        throw Exception(
+          'Smart Camera did not recognize a product. Try again with the label clearly visible.',
+        );
       Navigator.pop(context, query);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         recognizing = false;
-        error = 'Could not recognize product: $e';
+        error = 'Smart Camera did not recognize the product: $e';
       });
     }
   }
@@ -85,7 +88,7 @@ class _ProductRecognitionCameraState extends State<ProductRecognitionCamera> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('AI Product Camera')),
+    appBar: AppBar(title: const Text('Smart Product Camera')),
     body: Column(
       children: [
         Expanded(
@@ -110,7 +113,7 @@ class _ProductRecognitionCameraState extends State<ProductRecognitionCamera> {
           child: Column(
             children: [
               const Text(
-                'Place the product and visible label in the frame. AI will convert the image into a product search; you choose the result manually.',
+                'Place the product and visible label in the frame. Smart Camera will create a search; you choose the correct result manually.',
                 textAlign: TextAlign.center,
               ),
               if (error != null) ...[

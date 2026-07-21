@@ -482,7 +482,7 @@ class _POSScreenState extends State<POSScreen> {
 
   Future<void> _openAiProductCamera() async {
     if (_products.isEmpty) {
-      _showMessage('Load Firebase products before using AI recognition.');
+      _showMessage('Load Firebase products before using Smart Camera.');
       return;
     }
     final query = await Navigator.of(context).push<String>(
@@ -499,7 +499,7 @@ class _POSScreenState extends State<POSScreen> {
     });
     _searchFocusNode.requestFocus();
     _showMessage(
-      'AI recognized "$query". Select the correct product from the results.',
+      'Smart Camera found "$query". Select the correct product from the results.',
     );
   }
 
@@ -982,7 +982,7 @@ class _POSScreenState extends State<POSScreen> {
               widget.permissions == null ||
               widget.permissions!['ai_product_recognition'] == true)
             IconButton(
-              tooltip: 'Recognize product with AI camera',
+              tooltip: 'Search product with Smart Camera',
               onPressed: _isLoading ? null : _openAiProductCamera,
               icon: const Icon(Icons.center_focus_strong),
             ),

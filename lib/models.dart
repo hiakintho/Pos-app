@@ -71,6 +71,7 @@ class User {
   final String role; // Changed from Enum to String
   final String? branchId;
   final String? businessId;
+  final bool requiresEmailVerification;
 
   User({
     required this.id,
@@ -79,6 +80,7 @@ class User {
     required this.role,
     this.branchId,
     this.businessId,
+    this.requiresEmailVerification = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -89,6 +91,7 @@ class User {
       'role': role,
       'branchId': branchId,
       'businessId': businessId,
+      'requiresEmailVerification': requiresEmailVerification,
     };
   }
 
@@ -119,6 +122,7 @@ class User {
       role: finalRole,
       branchId: map['branchId'],
       businessId: map['businessId'],
+      requiresEmailVerification: map['requiresEmailVerification'] == true,
     );
   }
 }
