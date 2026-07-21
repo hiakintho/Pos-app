@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -1760,11 +1761,20 @@ class _AddProductSheetState extends State<_AddProductSheet> {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Image.file(
-                      File(_images[index].path),
-                      width: 92,
-                      height: 92,
-                      fit: BoxFit.cover,
+                    child: FutureBuilder<Uint8List>(
+                      future: _images[index].readAsBytes(),
+                      builder: (context, snapshot) => snapshot.hasData
+                          ? Image.memory(
+                              snapshot.data!,
+                              width: 92,
+                              height: 92,
+                              fit: BoxFit.cover,
+                            )
+                          : const SizedBox(
+                              width: 92,
+                              height: 92,
+                              child: Center(child: ModernLoadingIndicator()),
+                            ),
                     ),
                   ),
                   Positioned(

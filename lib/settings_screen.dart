@@ -9,6 +9,7 @@ import 'firebase_options.dart';
 import 'models.dart';
 import 'notification_inbox_page.dart';
 import 'pricing_settings_screen.dart';
+import 'security_lock.dart';
 
 const List<_FeatureDefinition> _systemFeatures = [
   _FeatureDefinition('dashboard', 'Dashboard', 'View business overview'),
@@ -272,6 +273,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       OnlineBusinessSettingsPage(businessId: _businessId),
                 ),
               ),
+            ),
+          if (isOwner)
+            _SettingsTile(
+              icon: Icons.pin,
+              title: 'Reset security PIN',
+              subtitle: 'Require a new four-digit PIN and confirmation',
+              onTap: () async {
+                await SecurityLockController.reset(widget.user.id);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('PIN reset. Create and confirm a new PIN.'),
+                    ),
+                  );
+                }
+              },
             ),
           if (isOwner)
             _SettingsTile(

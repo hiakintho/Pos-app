@@ -89,7 +89,7 @@ class SalesManagementScreen extends StatelessWidget {
         final canMonitorBranches = _can(permissions, 'branch_sales_monitoring');
 
         return DefaultTabController(
-          length: 8,
+          length: 5,
           child: Scaffold(
             appBar: AppBar(
               leading: onOpenMenu == null
@@ -104,23 +104,13 @@ class SalesManagementScreen extends StatelessWidget {
                 isScrollable: true,
                 tabs: [
                   Tab(text: 'Analytics'),
-                  Tab(text: 'Transactions'),
                   Tab(text: 'Credit'),
                   Tab(text: 'Returns'),
-                  Tab(text: 'Delivery'),
-                  Tab(text: 'Customers'),
                   Tab(text: 'Docs'),
                   Tab(text: 'Tools'),
                 ],
               ),
-              actions: [
-                NotificationBellButton(user: user),
-                IconButton(
-                  tooltip: 'Add customer',
-                  onPressed: () => _openCustomerSheet(context),
-                  icon: const Icon(Icons.person_add),
-                ),
-              ],
+              actions: [NotificationBellButton(user: user)],
             ),
             body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: FirebaseFirestore.instance
@@ -146,12 +136,10 @@ class SalesManagementScreen extends StatelessWidget {
 
                 return TabBarView(
                   children: [
-                    _SalesAnalyticsTab(docs: allDocs, money: money),
-                    _SalesList(
+                    _SalesAnalyticsTab(
                       docs: allDocs,
                       money: money,
-                      date: date,
-                      canManage: canManageTransactions,
+                      businessId: _businessId,
                     ),
                     _CreditSalesTab(
                       docs: allDocs,
@@ -165,12 +153,6 @@ class SalesManagementScreen extends StatelessWidget {
                       date: date,
                       canManage: canManageTransactions,
                     ),
-                    _DeliveryTab(
-                      docs: allDocs,
-                      date: date,
-                      canManage: canManageTransactions,
-                    ),
-                    _CustomersTab(businessId: _businessId),
                     _DocumentsTab(
                       user: user,
                       money: money,
@@ -196,15 +178,69 @@ class SalesManagementScreen extends StatelessWidget {
   }
 }
 
-class _SalesAnalyticsTab extends StatelessWidget {
+class _SalesAnalyticsTab extends StatefulWidget {
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
   final NumberFormat money;
+  final String businessId;
 
-  const _SalesAnalyticsTab({required this.docs, required this.money});
+  const _SalesAnalyticsTab({
+    required this.docs,
+    required this.money,
+    required this.businessId,
+  });
+
+  @override
+  State<_SalesAnalyticsTab> createState() => _SalesAnalyticsTabState();
+}
+
+class _SalesAnalyticsTabState extends State<_SalesAnalyticsTab> {
+  Future<void> _setTarget(
+    BuildContext context,
+    String period,
+    double current,
+  ) async {
+    final controller = TextEditingController(
+      text: current > 0 ? current.toStringAsFixed(0) : '',
+    );
+    final result = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Set $period sales target'),
+        content: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'Target amount (Tsh)'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(context, double.tryParse(controller.text)),
+            child: const Text('Save target'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null || result <= 0) return;
+    await FirebaseFirestore.instance
+        .collection('businesses')
+        .doc(widget.businessId)
+        .collection('settings')
+        .doc('sales_target')
+        .set({
+          'period': period,
+          'amount': result,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+  }
 
   @override
   Widget build(BuildContext context) {
-    final analytics = _SalesAnalytics.fromDocs(docs);
+    final analytics = _SalesAnalytics.fromDocs(widget.docs);
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
@@ -225,25 +261,19 @@ class _SalesAnalyticsTab extends StatelessWidget {
               children: [
                 _MetricCard(
                   title: 'Sales Revenue',
-                  value: money.format(analytics.salesTotal),
+                  value: widget.money.format(analytics.salesTotal),
                   icon: Icons.payments,
                   color: Colors.green,
                 ),
                 _MetricCard(
-                  title: 'Transactions',
-                  value: analytics.salesCount.toString(),
-                  icon: Icons.receipt_long,
-                  color: Colors.blue,
-                ),
-                _MetricCard(
                   title: 'Credit Balance',
-                  value: money.format(analytics.creditBalance),
+                  value: widget.money.format(analytics.creditBalance),
                   icon: Icons.schedule,
                   color: Colors.orange,
                 ),
                 _MetricCard(
                   title: 'Returns',
-                  value: money.format(analytics.returnTotal),
+                  value: widget.money.format(analytics.returnTotal),
                   icon: Icons.undo,
                   color: Colors.red,
                 ),
@@ -252,11 +282,19 @@ class _SalesAnalyticsTab extends StatelessWidget {
           },
         ),
         const SizedBox(height: 16),
+        _SalesTargetChart(
+          businessId: widget.businessId,
+          posDocs: widget.docs,
+          money: widget.money,
+          onSetTarget: _setTarget,
+        ),
+        const SizedBox(height: 16),
         _SimpleBreakdownCard(
           title: 'Branch-wise Sales',
           rows: analytics.branchTotals.entries
               .map(
-                (entry) => _BreakdownRow(entry.key, money.format(entry.value)),
+                (entry) =>
+                    _BreakdownRow(entry.key, widget.money.format(entry.value)),
               )
               .toList(),
           emptyMessage: 'No branch sales yet.',
@@ -266,7 +304,8 @@ class _SalesAnalyticsTab extends StatelessWidget {
           title: 'Payment Methods',
           rows: analytics.paymentTotals.entries
               .map(
-                (entry) => _BreakdownRow(entry.key, money.format(entry.value)),
+                (entry) =>
+                    _BreakdownRow(entry.key, widget.money.format(entry.value)),
               )
               .toList(),
           emptyMessage: 'No payment data yet.',
@@ -274,6 +313,224 @@ class _SalesAnalyticsTab extends StatelessWidget {
       ],
     );
   }
+}
+
+class _SalesTargetChart extends StatelessWidget {
+  final String businessId;
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> posDocs;
+  final NumberFormat money;
+  final Future<void> Function(BuildContext, String, double) onSetTarget;
+
+  const _SalesTargetChart({
+    required this.businessId,
+    required this.posDocs,
+    required this.money,
+    required this.onSetTarget,
+  });
+
+  DateTime _asDate(dynamic value) => value is Timestamp
+      ? value.toDate()
+      : DateTime.tryParse(value?.toString() ?? '') ?? DateTime.now();
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) => StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+    stream: FirebaseFirestore.instance
+        .collection('businesses')
+        .doc(businessId)
+        .collection('settings')
+        .doc('sales_target')
+        .snapshots(),
+    builder: (context, targetSnapshot) =>
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('customer_orders')
+              .snapshots(),
+          builder: (context, orderSnapshot) {
+            final targetData =
+                targetSnapshot.data?.data() ?? const <String, dynamic>{};
+            final period = (targetData['period'] ?? 'daily').toString();
+            final amount = (targetData['amount'] as num?)?.toDouble() ?? 0;
+            final dailyTarget = period == 'weekly'
+                ? amount / 7
+                : period == 'monthly'
+                ? amount / 30
+                : amount;
+            final now = DateTime.now();
+            final days = List.generate(
+              7,
+              (index) => DateTime(
+                now.year,
+                now.month,
+                now.day,
+              ).subtract(Duration(days: 6 - index)),
+            );
+            final pos = <DateTime, double>{};
+            final online = <DateTime, double>{};
+            for (final doc in posDocs) {
+              final data = doc.data();
+              final date = _asDate(data['timestamp']);
+              final day = DateTime(date.year, date.month, date.day);
+              pos.update(
+                day,
+                (value) =>
+                    value + ((data['totalAmount'] as num?)?.toDouble() ?? 0),
+                ifAbsent: () => (data['totalAmount'] as num?)?.toDouble() ?? 0,
+              );
+            }
+            for (final doc in orderSnapshot.data?.docs ?? const []) {
+              final data = doc.data();
+              final shops = (data['shopIds'] as List? ?? const []).map(
+                (item) => item.toString(),
+              );
+              if (!shops.contains(businessId) || data['status'] == 'cancelled')
+                continue;
+              final date = _asDate(data['createdAt']);
+              final day = DateTime(date.year, date.month, date.day);
+              online.update(
+                day,
+                (value) => value + ((data['total'] as num?)?.toDouble() ?? 0),
+                ifAbsent: () => (data['total'] as num?)?.toDouble() ?? 0,
+              );
+            }
+            final maximum = [
+              dailyTarget,
+              ...days.map((day) => (pos[day] ?? 0) + (online[day] ?? 0)),
+            ].fold<double>(1, (a, b) => a > b ? a : b);
+            return Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          'POS and Online Sales vs Target',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        DropdownButton<String>(
+                          value: period,
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'daily',
+                              child: Text('Daily'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'weekly',
+                              child: Text('Weekly'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'monthly',
+                              child: Text('Monthly'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null)
+                              onSetTarget(
+                                context,
+                                value,
+                                value == period ? amount : 0,
+                              );
+                          },
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => onSetTarget(context, period, amount),
+                          icon: const Icon(Icons.flag_outlined),
+                          label: const Text('Set target'),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      amount > 0
+                          ? '${period[0].toUpperCase()}${period.substring(1)} target: ${money.format(amount)}'
+                          : 'No sales target set',
+                    ),
+                    const SizedBox(height: 12),
+                    ...days.map((day) {
+                      final posValue = pos[day] ?? 0;
+                      final onlineValue = online[day] ?? 0;
+                      final posFlex = ((posValue / maximum) * 1000)
+                          .round()
+                          .clamp(1, 1000)
+                          .toInt();
+                      final onlineFlex = ((onlineValue / maximum) * 1000)
+                          .round()
+                          .clamp(1, 1000)
+                          .toInt();
+                      final emptyFlex = (1000 - posFlex - onlineFlex)
+                          .clamp(1, 1000)
+                          .toInt();
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${DateFormat('EEE, d MMM').format(day)}  •  POS ${money.format(posValue)}  •  Online ${money.format(onlineValue)}',
+                            ),
+                            const SizedBox(height: 5),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    flex: posFlex,
+                                    child: Container(
+                                      height: 12,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: onlineFlex,
+                                    child: Container(
+                                      height: 12,
+                                      color: Colors.purple,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: emptyFlex,
+                                    child: Container(
+                                      height: 12,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.surfaceContainerHighest,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (dailyTarget > 0)
+                              Text(
+                                '${money.format(posValue + onlineValue)} of ${money.format(dailyTarget)} daily equivalent',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                          ],
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 8),
+                    const Wrap(
+                      spacing: 16,
+                      children: [
+                        Text('■ POS', style: TextStyle(color: Colors.blue)),
+                        Text(
+                          '■ Online',
+                          style: TextStyle(color: Colors.purple),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+  );
 }
 
 class _SalesList extends StatelessWidget {

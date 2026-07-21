@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import 'app_loading_indicator.dart';
 
 class SecurityLock extends StatefulWidget {
@@ -18,6 +20,17 @@ class SecurityLock extends StatefulWidget {
   State<SecurityLock> createState() => _SecurityLockState();
 }
 
+class SecurityLockController {
+  static final ValueNotifier<String?> resetUser = ValueNotifier(null);
+
+  static Future<void> reset(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('security_pin_$userId');
+    resetUser.value = null;
+    resetUser.value = userId;
+  }
+}
+
 class _SecurityLockState extends State<SecurityLock> {
   final pin = TextEditingController();
   final confirmPin = TextEditingController();
@@ -27,12 +40,41 @@ class _SecurityLockState extends State<SecurityLock> {
   bool setup = false;
   String? error;
   late String pinKey;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? resetSubscription;
 
   @override
   void initState() {
     super.initState();
     pinKey = 'security_pin_${widget.userId}';
+    SecurityLockController.resetUser.addListener(_handleLocalReset);
+    resetSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.userId)
+        .snapshots()
+        .listen(_handleRemoteReset);
     _load();
+  }
+
+  void _handleLocalReset() {
+    if (SecurityLockController.resetUser.value == widget.userId) {
+      setState(() {
+        setup = true;
+        locked = true;
+        error = null;
+      });
+    }
+  }
+
+  Future<void> _handleRemoteReset(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    final marker = doc.data()?['pinResetRequestedAt']?.toString();
+    if (marker == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final markerKey = 'pin_reset_marker_${widget.userId}';
+    if (prefs.getString(markerKey) == marker) return;
+    await prefs.setString(markerKey, marker);
+    await SecurityLockController.reset(widget.userId);
   }
 
   Future<void> _load() async {
@@ -94,6 +136,8 @@ class _SecurityLockState extends State<SecurityLock> {
 
   @override
   void dispose() {
+    resetSubscription?.cancel();
+    SecurityLockController.resetUser.removeListener(_handleLocalReset);
     pin.dispose();
     confirmPin.dispose();
     super.dispose();

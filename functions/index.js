@@ -37,7 +37,9 @@ exports.aiSupportChat = onCall(async (request) => {
 exports.aiBusinessAdvice = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in is required.");
   const context = request.data?.context || {};
-  const prompt = `Analyze this POS business summary and return: 1) key insight, 2) cost reduction advice, 3) stock action, 4) cash-flow warning, 5) best-practice action. Use exact supplied figures and do not invent data.\n${JSON.stringify(context)}`;
+  const prompt = `Prepare a detailed, professional business performance report from this POS summary.
+Include, in order: executive summary; sales and transaction performance; product and inventory performance; cost-control opportunities; cash-flow position and warnings; operational risks and controls; prioritized actions for the next 7, 30, and 90 days; and figures the owner should verify.
+Explain the reasoning behind every recommendation. Use every relevant supplied figure, distinguish facts from recommendations, and clearly state when data is insufficient. Never invent revenue, profit, margin, costs, dates, or trends. Do not use Markdown stars, decorative symbols, or promotional language. Return the complete report without shortening it.\nBusiness summary:\n${JSON.stringify(context)}`;
   return { text: await callGemini([{ role: "user", parts: [{ text: prompt }] }], systemGuide) };
 });
 

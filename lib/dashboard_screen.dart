@@ -11,7 +11,7 @@ import 'models.dart';
 import 'notification_inbox_page.dart';
 import 'ai_service.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   final User user;
   final VoidCallback? onOpenMenu;
   final Map<String, bool>? permissions;
@@ -23,18 +23,48 @@ class DashboardScreen extends StatelessWidget {
   });
 
   @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  DateTimeRange _range = DateTimeRange(
+    start: DateTime.now().subtract(const Duration(days: 29)),
+    end: DateTime.now(),
+  );
+
+  Future<void> _chooseRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+      initialDateRange: _range,
+      helpText: 'Select dashboard reporting period',
+    );
+    if (picked != null) setState(() => _range = picked);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: onOpenMenu == null
+        leading: widget.onOpenMenu == null
             ? null
             : IconButton(
                 tooltip: 'Menu',
-                onPressed: onOpenMenu,
+                onPressed: widget.onOpenMenu,
                 icon: const Icon(Icons.menu),
               ),
         title: const Text('Dashboard'),
-        actions: [NotificationBellButton(user: user)],
+        actions: [
+          TextButton.icon(
+            onPressed: _chooseRange,
+            icon: const Icon(Icons.date_range_outlined),
+            label: Text(
+              '${DateFormat('d MMM').format(_range.start)} – ${DateFormat('d MMM').format(_range.end)}',
+            ),
+          ),
+          NotificationBellButton(user: widget.user),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance.collection('products').snapshots(),
@@ -79,16 +109,10 @@ class DashboardScreen extends StatelessWidget {
                         salesSnapshot.data!.docs,
                         purchaseSnapshot.data!.docs,
                         onlineSnapshot.data!.docs,
-                        user.businessId ?? 'default_business',
+                        widget.user.businessId ?? 'default_business',
+                        dateRange: _range,
                       );
-                      return _DashboardContent(
-                        user: user,
-                        data: data,
-                        aiEnabled:
-                            user.role == UserRole.superAdmin ||
-                            permissions == null ||
-                            permissions!['ai_business_advisor'] == true,
-                      );
+                      return _DashboardContent(user: widget.user, data: data);
                     },
                   );
                 },
@@ -104,13 +128,8 @@ class DashboardScreen extends StatelessWidget {
 class _DashboardContent extends StatelessWidget {
   final User user;
   final _DashboardData data;
-  final bool aiEnabled;
 
-  const _DashboardContent({
-    required this.user,
-    required this.data,
-    required this.aiEnabled,
-  });
+  const _DashboardContent({required this.user, required this.data});
 
   @override
   Widget build(BuildContext context) {
@@ -227,10 +246,6 @@ class _DashboardContent extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            if (aiEnabled) ...[
-              _AiAdviceCard(data: data),
-              const SizedBox(height: 20),
-            ],
             LayoutBuilder(
               builder: (context, constraints) {
                 final isDesktop = constraints.maxWidth >= 900;
@@ -687,17 +702,103 @@ class _InsightCard extends StatelessWidget {
   );
 }
 
-class _AiAdviceCard extends StatefulWidget {
-  final _DashboardData data;
-  const _AiAdviceCard({required this.data});
+class SmartBusinessAdvisorScreen extends StatelessWidget {
+  final User user;
+  final VoidCallback? onOpenMenu;
+
+  const SmartBusinessAdvisorScreen({
+    super.key,
+    required this.user,
+    this.onOpenMenu,
+  });
 
   @override
-  State<_AiAdviceCard> createState() => _AiAdviceCardState();
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      leading: onOpenMenu == null
+          ? null
+          : IconButton(
+              tooltip: 'Menu',
+              onPressed: onOpenMenu,
+              icon: const Icon(Icons.menu),
+            ),
+      title: const Text('Smart Business Advisor'),
+      actions: [NotificationBellButton(user: user)],
+    ),
+    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('products').snapshots(),
+      builder: (context, products) =>
+          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('sales')
+                .orderBy('timestamp', descending: true)
+                .limit(50)
+                .snapshots(),
+            builder: (context, sales) =>
+                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: FirebaseFirestore.instance
+                      .collection('stock_purchases')
+                      .orderBy('createdAt', descending: true)
+                      .limit(20)
+                      .snapshots(),
+                  builder: (context, purchases) =>
+                      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: FirebaseFirestore.instance
+                            .collection('customer_orders')
+                            .snapshots(),
+                        builder: (context, orders) {
+                          if (products.hasError ||
+                              sales.hasError ||
+                              purchases.hasError ||
+                              orders.hasError) {
+                            return const Center(
+                              child: Text(
+                                'Could not load the business data needed for this report.',
+                              ),
+                            );
+                          }
+                          if (!products.hasData ||
+                              !sales.hasData ||
+                              !purchases.hasData ||
+                              !orders.hasData) {
+                            return const Center(
+                              child: ModernLoadingIndicator(),
+                            );
+                          }
+                          final data = _DashboardData.fromSnapshots(
+                            products.data!.docs,
+                            sales.data!.docs,
+                            purchases.data!.docs,
+                            orders.data!.docs,
+                            user.businessId ?? 'default_business',
+                          );
+                          return _BusinessAdvisorReport(data: data);
+                        },
+                      ),
+                ),
+          ),
+    ),
+  );
 }
 
-class _AiAdviceCardState extends State<_AiAdviceCard> {
+class _BusinessAdvisorReport extends StatefulWidget {
+  final _DashboardData data;
+  const _BusinessAdvisorReport({required this.data});
+
+  @override
+  State<_BusinessAdvisorReport> createState() => _BusinessAdvisorReportState();
+}
+
+class _BusinessAdvisorReportState extends State<_BusinessAdvisorReport> {
   String? advice;
   bool loading = false;
+
+  String _professionalText(String value) => value
+      .replaceAll('**', '')
+      .replaceAll('###', '')
+      .replaceAll('##', '')
+      .replaceAll(RegExp(r'^\s*\*\s+', multiLine: true), '- ')
+      .trim();
 
   Future<void> analyze() async {
     setState(() => loading = true);
@@ -717,7 +818,7 @@ class _AiAdviceCardState extends State<_AiAdviceCard> {
         'averageUnitsSold': data.averageUnitsSold,
         'recentPurchaseCount': data.recentPurchases.length,
       });
-      if (mounted) setState(() => advice = result);
+      if (mounted) setState(() => advice = _professionalText(result));
     } catch (e) {
       if (mounted) {
         setState(
@@ -731,48 +832,67 @@ class _AiAdviceCardState extends State<_AiAdviceCard> {
   }
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.auto_awesome, color: Colors.deepPurple),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Smart Business Advisor',
-                  style: Theme.of(context).textTheme.titleLarge,
+  Widget build(BuildContext context) => SingleChildScrollView(
+    padding: const EdgeInsets.all(20),
+    child: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1050),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.assessment_outlined,
+                      size: 34,
+                      color: Colors.deepPurple,
+                    ),
+                    Text(
+                      'Business Performance Report',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    FilledButton.icon(
+                      onPressed: loading ? null : analyze,
+                      icon: loading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: ModernLoadingIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.analytics_outlined),
+                      label: Text(
+                        advice == null
+                            ? 'Generate detailed report'
+                            : 'Refresh report',
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              FilledButton.icon(
-                onPressed: loading ? null : analyze,
-                icon: loading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: ModernLoadingIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.psychology),
-                label: Text(
-                  advice == null ? 'Analyze business' : 'Refresh advice',
+                const SizedBox(height: 18),
+                const Divider(),
+                const SizedBox(height: 18),
+                SelectableText(
+                  advice ??
+                      'Generate a detailed professional review of sales performance, inventory health, cost control, cash flow, risks, and recommended actions. The complete report will be shown here and can be selected or copied.',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(height: 1.65),
                 ),
-              ),
-            ],
+                const SizedBox(height: 20),
+                Text(
+                  'Decision notice: Review source transactions and current balances before changing prices, stock, payroll, or payments.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            advice ??
-                'Generate data-based recommendations for stock, cash flow, cost reduction, and operating best practices.',
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Advice supports decisions; review figures before changing prices, stock, payroll, or payments.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
+        ),
       ),
     ),
   );
@@ -828,12 +948,34 @@ class _DashboardData {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> saleDocs,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> purchaseDocs,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> onlineOrderDocs,
-    String businessId,
-  ) {
+    String businessId, {
+    DateTimeRange? dateRange,
+  }) {
+    bool inRange(dynamic value) {
+      if (dateRange == null) return true;
+      final date = _dateFromValue(value);
+      final start = DateTime(
+        dateRange.start.year,
+        dateRange.start.month,
+        dateRange.start.day,
+      );
+      final end = DateTime(
+        dateRange.end.year,
+        dateRange.end.month,
+        dateRange.end.day,
+        23,
+        59,
+        59,
+        999,
+      );
+      return !date.isBefore(start) && !date.isAfter(end);
+    }
+
     final scopedProductDocs = productDocs.where((doc) {
       final data = doc.data();
       return (data['businessId'] as String? ?? 'default_business') ==
-          businessId;
+              businessId &&
+          inRange(data['timestamp']);
     });
     final scopedSaleDocs = saleDocs.where((doc) {
       final data = doc.data();
@@ -867,7 +1009,9 @@ class _DashboardData {
       final shopIds = (data['shopIds'] as List? ?? const []).map(
         (value) => value.toString(),
       );
-      return shopIds.contains(businessId) && data['status'] != 'cancelled';
+      return shopIds.contains(businessId) &&
+          data['status'] != 'cancelled' &&
+          inRange(data['createdAt']);
     }).toList();
     final recentPurchases = scopedPurchaseDocs
         .map(_PurchaseSummary.fromDoc)

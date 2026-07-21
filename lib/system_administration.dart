@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
@@ -15,6 +16,7 @@ import 'customer_support_page.dart';
 import 'notification_inbox_page.dart';
 import 'settings_screen.dart';
 import 'account_security.dart';
+import 'update_management.dart';
 
 Set<String>? _knownRegisteredBusinesses;
 
@@ -49,6 +51,7 @@ class _BusinessOwnerRegistrationPageState
   final _branchAddress = TextEditingController();
   final _paymentReference = TextEditingController();
   XFile? _profileImage;
+  Uint8List? _profileBytes;
   bool _saving = false;
 
   @override
@@ -84,7 +87,7 @@ class _BusinessOwnerRegistrationPageState
       String? profileUrl;
       if (_profileImage != null) {
         final ref = FirebaseStorage.instance.ref('owner_profiles/$uid.jpg');
-        await ref.putFile(File(_profileImage!.path));
+        await ref.putData(await _profileImage!.readAsBytes());
         profileUrl = await ref.getDownloadURL();
       }
       final firestore = FirebaseFirestore.instance;
@@ -156,15 +159,19 @@ class _BusinessOwnerRegistrationPageState
                             maxWidth: 800,
                           );
                           if (image != null && mounted) {
-                            setState(() => _profileImage = image);
+                            final bytes = await image.readAsBytes();
+                            setState(() {
+                              _profileImage = image;
+                              _profileBytes = bytes;
+                            });
                           }
                         },
                   child: CircleAvatar(
                     radius: 48,
-                    backgroundImage: _profileImage == null
+                    backgroundImage: _profileBytes == null
                         ? null
-                        : FileImage(File(_profileImage!.path)),
-                    child: _profileImage == null
+                        : MemoryImage(_profileBytes!),
+                    child: _profileBytes == null
                         ? const Icon(Icons.add_a_photo, size: 32)
                         : null,
                   ),
@@ -471,6 +478,9 @@ class _SystemOwnerPageState extends State<SystemOwnerPage> {
                     embedded: true,
                   );
                 }
+                if (_section == 6) {
+                  return UpdateManagementPage(systemOwner: widget.user);
+                }
                 if (!snapshot.hasData) {
                   return const Center(child: ModernLoadingIndicator());
                 }
@@ -634,6 +644,7 @@ class _SystemMobileDrawer extends StatelessWidget {
             ('Expenses', Icons.payments, 3),
             ('Training & Implementation', Icons.school, 4),
             ('Customer Support', Icons.support_agent, 5),
+            ('Update Management', Icons.system_update, 6),
           ].map(
             (item) => ListTile(
               leading: Icon(item.$2),
@@ -692,6 +703,7 @@ class _SystemFeatureSearch extends SearchDelegate<void> {
     ('Expenses', Icons.payments, 3),
     ('Training & Implementation', Icons.school, 4),
     ('Customer Support', Icons.support_agent, 5),
+    ('Update Management', Icons.system_update, 6),
     ('Business Help Management', Icons.manage_accounts, null),
     ('Profile Management', Icons.account_circle, null),
   ];
@@ -786,6 +798,36 @@ class _BusinessHelpManagementPageState
                 onChanged: (value) => setState(() => _businessId = value),
               ),
             ),
+            if (selected != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.pin),
+                    label: const Text('Reset business owner PIN'),
+                    onPressed: () async {
+                      final ownerId = selected.data()['ownerId']?.toString();
+                      if (ownerId == null || ownerId.isEmpty) return;
+                      await FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(ownerId)
+                          .set({
+                            'pinResetRequestedAt': FieldValue.serverTimestamp(),
+                            'pinResetRequestedBy': widget.systemOwner.id,
+                          }, SetOptions(merge: true));
+                      if (context.mounted)
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'PIN reset requested. The owner will create a new PIN on that device.',
+                            ),
+                          ),
+                        );
+                    },
+                  ),
+                ),
+              ),
             if (selected == null)
               const Expanded(
                 child: Center(
@@ -826,6 +868,8 @@ class _SystemOwnerProfilePageState extends State<_SystemOwnerProfilePage> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
   final _profileUrl = TextEditingController();
+  final _currentPassword = TextEditingController();
+  final _newPassword = TextEditingController();
   bool _loaded = false;
 
   @override
@@ -833,6 +877,8 @@ class _SystemOwnerProfilePageState extends State<_SystemOwnerProfilePage> {
     _name.dispose();
     _phone.dispose();
     _profileUrl.dispose();
+    _currentPassword.dispose();
+    _newPassword.dispose();
     super.dispose();
   }
 
@@ -850,6 +896,42 @@ class _SystemOwnerProfilePageState extends State<_SystemOwnerProfilePage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Profile updated.')));
+    }
+  }
+
+  Future<void> _changePassword() async {
+    final current = auth.FirebaseAuth.instance.currentUser;
+    if (current == null || current.email == null) return;
+    if (_currentPassword.text.isEmpty || _newPassword.text.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Enter the current password and a new password of at least 8 characters.',
+          ),
+        ),
+      );
+      return;
+    }
+    try {
+      final credential = auth.EmailAuthProvider.credential(
+        email: current.email!,
+        password: _currentPassword.text,
+      );
+      await current.reauthenticateWithCredential(credential);
+      await current.updatePassword(_newPassword.text);
+      _currentPassword.clear();
+      _newPassword.clear();
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Password changed successfully.')),
+        );
+    } on auth.FirebaseAuthException catch (error) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message ?? 'Could not change the password.'),
+          ),
+        );
     }
   }
 
@@ -925,6 +1007,39 @@ class _SystemOwnerProfilePageState extends State<_SystemOwnerProfilePage> {
               onPressed: _save,
               icon: const Icon(Icons.save),
               label: const Text('Save profile'),
+            ),
+            const SizedBox(height: 28),
+            Text(
+              'Change password',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Confirm the current password to change it directly. An OTP is not required for an authenticated system owner.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _currentPassword,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Current password',
+                prefixIcon: Icon(Icons.lock_outline),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _newPassword,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'New password (minimum 8 characters)',
+                prefixIcon: Icon(Icons.password),
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _changePassword,
+              icon: const Icon(Icons.security),
+              label: const Text('Change password'),
             ),
           ],
         );
@@ -1041,6 +1156,13 @@ class _SystemSidebar extends StatelessWidget {
                     'Customer Support',
                     selected: selectedIndex == 5,
                     onTap: () => onSelected(5),
+                  ),
+                  _item(
+                    context,
+                    Icons.system_update,
+                    'Update Management',
+                    selected: selectedIndex == 6,
+                    onTap: () => onSelected(6),
                   ),
                 ],
               ),

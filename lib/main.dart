@@ -27,6 +27,8 @@ import 'delivery_management_page.dart';
 import 'business_management_screen.dart';
 import 'account_security.dart';
 import 'security_lock.dart';
+import 'location_consent.dart';
+import 'update_management.dart';
 
 const Color _spotifyGreen = Color(0xFF1DB954);
 const Color _spotifyBlack = Color(0xFF050505);
@@ -131,7 +133,7 @@ class RubenPOS extends StatelessWidget {
           unselectedItemColor: _spotifyMutedText,
         ),
       ),
-      home: const AuthGate(),
+      home: const WindowsLocationConsent(child: AuthGate()),
     );
   }
 }
@@ -182,10 +184,13 @@ class AuthGate extends StatelessWidget {
               return const EmailVerificationPage();
             }
 
-            Widget secured(Widget page) => SecurityLock(
-              key: ValueKey('security_${appUser.id}'),
-              userId: appUser.id,
-              child: page,
+            Widget secured(Widget page) => DeviceUpdateGate(
+              user: appUser,
+              child: SecurityLock(
+                key: ValueKey('security_${appUser.id}'),
+                userId: appUser.id,
+                child: page,
+              ),
             );
 
             if (appUser.role == UserRole.customer) {
@@ -478,6 +483,15 @@ class _MainNavigationState extends State<MainNavigation> {
             permissions: permissions,
           ),
           showInPrimaryNavigation: true,
+        ),
+      if (can('ai_business_advisor'))
+        _NavigationItem(
+          label: 'Smart Business Advisor',
+          icon: Icons.assessment_outlined,
+          screen: SmartBusinessAdvisorScreen(
+            user: widget.user,
+            onOpenMenu: _openDrawer,
+          ),
         ),
       if (can('pos'))
         _NavigationItem(
