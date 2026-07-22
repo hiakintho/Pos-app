@@ -17,6 +17,51 @@ import 'models.dart';
 import 'notification_inbox_page.dart';
 import 'account_security.dart';
 
+String? _usableImageUrl(dynamic value) {
+  final url = value?.toString().trim();
+  if (url == null || url.isEmpty) return null;
+  final uri = Uri.tryParse(url);
+  if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http')) {
+    return null;
+  }
+  return url;
+}
+
+String? _productImageUrl(Product product, Map<String, dynamic> raw) {
+  for (final candidate in [raw['imageUrl'], ...product.imageUrls]) {
+    final url = _usableImageUrl(candidate);
+    if (url != null) return url;
+  }
+  return null;
+}
+
+class _CustomerNetworkImage extends StatelessWidget {
+  final String url;
+  final BoxFit fit;
+  final double? width;
+  final double? height;
+  final Widget Function(BuildContext context)? error;
+
+  const _CustomerNetworkImage({
+    required this.url,
+    required this.fit,
+    this.width,
+    this.height,
+    this.error,
+  });
+
+  @override
+  Widget build(BuildContext context) => Image.network(
+    url,
+    width: width,
+    height: height,
+    fit: fit,
+    webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+    errorBuilder: (context, _, _) =>
+        error?.call(context) ?? const Icon(Icons.broken_image, size: 60),
+  );
+}
+
 class CustomerRegistrationPage extends StatefulWidget {
   const CustomerRegistrationPage({super.key});
 
@@ -426,11 +471,10 @@ class _ShopPageState extends State<_ShopPage> {
                         itemCount: products.length,
                         itemBuilder: (context, index) {
                           final product = products[index];
-                          final imageUrl =
-                              snapshot.data!.docs
-                                      .firstWhere((doc) => doc.id == product.id)
-                                      .data()['imageUrl']
-                                  as String?;
+                          final raw = snapshot.data!.docs
+                              .firstWhere((doc) => doc.id == product.id)
+                              .data();
+                          final imageUrl = _productImageUrl(product, raw);
                           return _ProductCard(
                             product: product,
                             imageUrl: imageUrl,
@@ -501,11 +545,9 @@ class _ProductCard extends StatelessWidget {
                         color: Color(0xFF242424),
                         child: Icon(Icons.inventory_2, size: 72),
                       )
-                    : Image.network(
-                        imageUrl!,
+                    : _CustomerNetworkImage(
+                        url: imageUrl!,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
-                            const Icon(Icons.broken_image, size: 60),
                       ),
               ),
             ),
@@ -679,14 +721,14 @@ class _ProductDetails extends StatelessWidget {
                   separatorBuilder: (_, _) => const SizedBox(width: 12),
                   itemBuilder: (context, index) => ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      imageUrls[index],
+                    child: _CustomerNetworkImage(
+                      url: imageUrls[index],
                       width: MediaQuery.sizeOf(context).width.clamp(280, 620),
                       fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => const SizedBox(
-                        width: 280,
-                        child: Icon(Icons.broken_image, size: 80),
-                      ),
+                      error: (_) => const SizedBox(
+                          width: 280,
+                          child: Icon(Icons.broken_image, size: 80),
+                        ),
                     ),
                   ),
                 ),
@@ -1216,7 +1258,14 @@ class _CartPageState extends State<_CartPage> {
                   leading: line.imageUrl == null
                       ? const CircleAvatar(child: Icon(Icons.inventory_2))
                       : CircleAvatar(
-                          backgroundImage: NetworkImage(line.imageUrl!),
+                          child: ClipOval(
+                            child: _CustomerNetworkImage(
+                              url: line.imageUrl!,
+                              width: 40,
+                              height: 40,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
                         ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1857,13 +1906,13 @@ class CustomerOrderManagementPage extends StatelessWidget {
                 child: InteractiveViewer(
                   minScale: 0.8,
                   maxScale: 4,
-                  child: Image.network(
-                    proofUrl,
+                  child: _CustomerNetworkImage(
+                    url: proofUrl,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('The delivery photo could not be loaded.'),
-                    ),
+                    error: (_) => const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text('The delivery photo could not be loaded.'),
+                      ),
                   ),
                 ),
               ),
