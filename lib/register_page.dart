@@ -93,10 +93,7 @@ class _RegisterPageState extends State<RegisterPage> {
         email: email,
         role: _selectedRole,
         branchId: _selectedBranch,
-        requiresEmailVerification: true,
       );
-
-      await userCredential.user!.sendEmailVerification();
 
       await FirebaseFirestore.instance
           .collection('users')
@@ -105,11 +102,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Registration successful. A verification email was sent.',
-            ),
-          ),
+          const SnackBar(content: Text('Registration successful.')),
         );
         Navigator.pop(context);
       }

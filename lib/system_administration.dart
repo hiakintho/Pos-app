@@ -83,7 +83,6 @@ class _BusinessOwnerRegistrationPageState
             password: _password.text,
           );
       final uid = credential.user!.uid;
-      await credential.user!.sendEmailVerification();
       String? profileUrl;
       if (_profileImage != null) {
         final ref = FirebaseStorage.instance.ref('owner_profiles/$uid.jpg');
@@ -122,7 +121,7 @@ class _BusinessOwnerRegistrationPageState
         'branchId': branchRef.id,
         'profileUrl': profileUrl,
         'accountStatus': 'pending_payment_approval',
-        'requiresEmailVerification': true,
+        'requiresEmailVerification': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
       await batch.commit();

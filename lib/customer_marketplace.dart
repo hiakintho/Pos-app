@@ -80,7 +80,6 @@ class _CustomerRegistrationPageState extends State<CustomerRegistrationPage> {
             email: _email.text.trim(),
             password: _password.text,
           );
-      await credential.user!.sendEmailVerification();
       await FirebaseFirestore.instance
           .collection('users')
           .doc(credential.user!.uid)
@@ -93,7 +92,7 @@ class _CustomerRegistrationPageState extends State<CustomerRegistrationPage> {
             if (_location != null) 'location': _location,
             'role': UserRole.customer,
             'isActive': true,
-            'requiresEmailVerification': true,
+            'requiresEmailVerification': false,
             'createdAt': FieldValue.serverTimestamp(),
           });
       if (mounted) Navigator.pop(context);

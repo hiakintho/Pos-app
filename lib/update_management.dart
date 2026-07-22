@@ -113,21 +113,20 @@ class DeviceUpdateService {
     if (!context.mounted) return;
     await showDialog<void>(
       context: context,
-      barrierDismissible: data['mandatory'] != true,
+      barrierDismissible: true,
       builder: (dialogContext) => AlertDialog(
         title: Text('Update $version available'),
         content: Text(
           '${data['releaseNotes'] ?? 'A new release is ready.'}\n\nThe file downloads in the background. Windows will launch the installer; Android will ask you to approve APK installation.',
         ),
         actions: [
-          if (data['mandatory'] != true)
-            TextButton(
-              onPressed: () async {
-                await prefs.setString('dismissed_update_$platform', version);
-                if (dialogContext.mounted) Navigator.pop(dialogContext);
-              },
-              child: const Text('Later'),
-            ),
+          TextButton(
+            onPressed: () async {
+              await prefs.setString('dismissed_update_$platform', version);
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+            },
+            child: const Text('Later'),
+          ),
           FilledButton.icon(
             onPressed: () {
               Navigator.pop(dialogContext);
@@ -227,7 +226,7 @@ class _UpdateManagementPageState extends State<UpdateManagementPage> {
   String platform = 'windows';
   final version = TextEditingController();
   final notes = TextEditingController();
-  bool mandatory = false, uploading = false;
+  bool uploading = false;
 
   @override
   void dispose() {
@@ -267,7 +266,7 @@ class _UpdateManagementPageState extends State<UpdateManagementPage> {
             'platform': platform,
             'version': version.text.trim(),
             'releaseNotes': notes.text.trim(),
-            'mandatory': mandatory,
+            'mandatory': false,
             'downloadUrl': url,
             'fileName': file.name,
             'publishedAt': FieldValue.serverTimestamp(),
@@ -348,13 +347,6 @@ class _UpdateManagementPageState extends State<UpdateManagementPage> {
           maxLines: 4,
           decoration: const InputDecoration(labelText: 'Release notes'),
         ),
-        SwitchListTile(
-          title: const Text('Mandatory update'),
-          subtitle: const Text('Users cannot dismiss the update prompt'),
-          value: mandatory,
-          onChanged: (v) => setState(() => mandatory = v),
-        ),
-        const SizedBox(height: 12),
         FilledButton.icon(
           onPressed: uploading ? null : _upload,
           icon: uploading

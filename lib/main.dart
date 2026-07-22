@@ -179,11 +179,6 @@ class AuthGate extends StatelessWidget {
             }
             NotificationService.register(appUser.id);
 
-            if (appUser.requiresEmailVerification &&
-                !firebaseUser.emailVerified) {
-              return const EmailVerificationPage();
-            }
-
             Widget secured(Widget page) => DeviceUpdateGate(
               user: appUser,
               child: SecurityLock(
