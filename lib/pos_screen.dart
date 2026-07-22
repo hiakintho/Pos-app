@@ -1104,6 +1104,15 @@ class _POSScreenState extends State<POSScreen> {
                       }
                     : null,
               ),
+              if (_isDesktop) ...[
+                const Spacer(),
+                ActionChip(
+                  avatar: const Icon(Icons.usb, size: 18),
+                  label: const Text('Barcode scanner ready'),
+                  tooltip: 'Focus scanner input',
+                  onPressed: _activateDesktopScanner,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 8),

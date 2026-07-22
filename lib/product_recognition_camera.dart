@@ -20,6 +20,13 @@ class _ProductRecognitionCameraState extends State<ProductRecognitionCamera> {
   String? error;
   bool recognizing = false, switchingCamera = false;
 
+  String get activeCameraLabel {
+    if (cameras.isEmpty) return 'Starting camera';
+    return cameras[activeCameraIndex].lensDirection == CameraLensDirection.front
+        ? 'Front camera'
+        : 'Rear camera';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -125,6 +132,7 @@ class _ProductRecognitionCameraState extends State<ProductRecognitionCamera> {
     appBar: AppBar(
       title: const Text('Smart Product Camera'),
       actions: [
+        Center(child: Text(activeCameraLabel)),
         if (cameras.length > 1)
           IconButton(
             tooltip: 'Switch front/rear camera',
