@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'app_loading_indicator.dart';
 import 'package:flutter/services.dart';
@@ -63,6 +64,11 @@ class _POSScreenState extends State<POSScreen> {
   bool _productQueryFromVoice = false;
   bool _customerQueryFromVoice = false;
   String get _businessId => widget.user.businessId ?? 'default_business';
+  bool get _isDesktop =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.macOS);
 
   @override
   void initState() {
@@ -436,7 +442,33 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   void _submitSearch(String value) {
+    if (_isDesktop) {
+      final product = _products
+          .where(
+            (item) =>
+                item.barcode.trim().toLowerCase() == value.trim().toLowerCase(),
+          )
+          .firstOrNull;
+      if (product == null) {
+        if (value.trim().isNotEmpty) {
+          _showMessage('No product found for barcode ${value.trim()}.');
+        }
+      } else {
+        _handleScannedCode(value);
+        _searchController.clear();
+      }
+      _searchFocusNode.requestFocus();
+      return;
+    }
     // Search results are selected manually to prevent accidental additions.
+  }
+
+  void _activateDesktopScanner() {
+    _searchController.clear();
+    _searchFocusNode.requestFocus();
+    _showMessage(
+      'USB/Bluetooth scanner ready. Scan a barcode; keyboard-mode scanners submit automatically.',
+    );
   }
 
   Product? _findProductByCodeOrName(String value) {
@@ -481,6 +513,7 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   Future<void> _openAiProductCamera() async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) return;
     if (_products.isEmpty) {
       _showMessage('Load Firebase products before using Smart Camera.');
       return;
@@ -978,9 +1011,16 @@ class _POSScreenState extends State<POSScreen> {
             onPressed: _isLoading ? null : _openScanner,
             icon: const Icon(Icons.qr_code_scanner),
           ),
-          if (widget.user.role == UserRole.superAdmin ||
-              widget.permissions == null ||
-              widget.permissions!['ai_product_recognition'] == true)
+          if (_isDesktop)
+            IconButton(
+              tooltip: 'Use connected barcode scanner',
+              onPressed: _isLoading ? null : _activateDesktopScanner,
+              icon: const Icon(Icons.usb),
+            ),
+          if ((kIsWeb || defaultTargetPlatform != TargetPlatform.windows) &&
+              (widget.user.role == UserRole.superAdmin ||
+                  widget.permissions == null ||
+                  widget.permissions!['ai_product_recognition'] == true))
             IconButton(
               tooltip: 'Search product with Smart Camera',
               onPressed: _isLoading ? null : _openAiProductCamera,
@@ -1070,7 +1110,9 @@ class _POSScreenState extends State<POSScreen> {
           SearchBar(
             controller: _searchController,
             focusNode: _searchFocusNode,
-            hintText: 'Search product name or barcode',
+            hintText: _isDesktop
+                ? 'Search or scan with a connected barcode scanner'
+                : 'Search product name or barcode',
             leading: const Icon(Icons.search),
             trailing: [
               IconButton(
@@ -1105,7 +1147,9 @@ class _POSScreenState extends State<POSScreen> {
           const SizedBox(height: 8),
           Text(
             query.isEmpty
-                ? 'Search products or use the scanner in the app bar.'
+                ? _isDesktop
+                      ? 'USB/Bluetooth keyboard-mode scanners are ready; scan a code and press Enter.'
+                      : 'Search products or use the scanner in the app bar.'
                 : '${products.length} result${products.length == 1 ? '' : 's'} for "$query"',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,

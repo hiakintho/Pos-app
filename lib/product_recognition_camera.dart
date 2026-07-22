@@ -15,8 +15,10 @@ class ProductRecognitionCamera extends StatefulWidget {
 
 class _ProductRecognitionCameraState extends State<ProductRecognitionCamera> {
   CameraController? controller;
+  List<CameraDescription> cameras = const [];
+  int activeCameraIndex = 0;
   String? error;
-  bool recognizing = false;
+  bool recognizing = false, switchingCamera = false;
 
   @override
   void initState() {
@@ -26,25 +28,57 @@ class _ProductRecognitionCameraState extends State<ProductRecognitionCamera> {
 
   Future<void> initialize() async {
     try {
-      final cameras = await availableCameras();
+      cameras = await availableCameras();
       if (cameras.isEmpty) throw Exception('No camera was found.');
-      final camera =
-          cameras
-              .where((item) => item.lensDirection == CameraLensDirection.front)
-              .firstOrNull ??
-          cameras.first;
-      final next = CameraController(
-        camera,
-        ResolutionPreset.medium,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
+      activeCameraIndex = cameras.indexWhere(
+        (item) => item.lensDirection == CameraLensDirection.back,
       );
+      if (activeCameraIndex < 0) activeCameraIndex = 0;
+      await _startCamera(cameras[activeCameraIndex]);
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    }
+  }
+
+  Future<void> _startCamera(CameraDescription camera) async {
+    final previous = controller;
+    if (mounted) {
+      setState(() {
+        controller = null;
+        error = null;
+      });
+    }
+    await previous?.dispose();
+    final next = CameraController(
+      camera,
+      ResolutionPreset.medium,
+      enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.jpeg,
+    );
+    try {
       await next.initialize();
       if (!mounted) return next.dispose();
       setState(() => controller = next);
     } catch (e) {
+      await next.dispose();
       if (mounted) setState(() => error = e.toString());
     }
+  }
+
+  Future<void> switchCamera() async {
+    if (switchingCamera || cameras.length < 2) return;
+    final currentDirection = cameras[activeCameraIndex].lensDirection;
+    var nextIndex = cameras.indexWhere(
+      (camera) =>
+          camera.lensDirection != currentDirection &&
+          (camera.lensDirection == CameraLensDirection.front ||
+              camera.lensDirection == CameraLensDirection.back),
+    );
+    if (nextIndex < 0) nextIndex = (activeCameraIndex + 1) % cameras.length;
+    setState(() => switchingCamera = true);
+    activeCameraIndex = nextIndex;
+    await _startCamera(cameras[activeCameraIndex]);
+    if (mounted) setState(() => switchingCamera = false);
   }
 
   Future<void> recognize() async {
@@ -88,7 +122,17 @@ class _ProductRecognitionCameraState extends State<ProductRecognitionCamera> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Smart Product Camera')),
+    appBar: AppBar(
+      title: const Text('Smart Product Camera'),
+      actions: [
+        if (cameras.length > 1)
+          IconButton(
+            tooltip: 'Switch front/rear camera',
+            onPressed: recognizing || switchingCamera ? null : switchCamera,
+            icon: const Icon(Icons.cameraswitch),
+          ),
+      ],
+    ),
     body: Column(
       children: [
         Expanded(
